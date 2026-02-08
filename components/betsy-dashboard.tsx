@@ -727,8 +727,11 @@ const BetsyDashboard = () => {
 
       {/* LEFT SIDEBAR: KNOWLEDGE BASE */}
       <aside className={cn(
-        "border-r border-white/10 bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
-        isLeftSidebarOpen ? "w-72 opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-full border-0"
+        "border-r border-white/10 bg-black/95 md:bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
+        "fixed inset-y-0 left-0 z-[60] h-full md:relative md:translate-x-0",
+        isLeftSidebarOpen
+          ? "w-72 translate-x-0 opacity-100 shadow-2xl"
+          : "-translate-x-full w-72 opacity-0 md:w-0 md:translate-x-0 md:opacity-0 md:border-0"
       )}>
         <div className="p-6 border-b border-white/10 flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white">B</div>
@@ -902,6 +905,14 @@ const BetsyDashboard = () => {
         </div>
       </aside>
 
+      {/* Mobile Backdrop */}
+      {isLeftSidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsLeftSidebarOpen(false)}
+        />
+      )}
+
       {/* CENTER: SEMANTIC CHAT */}
       <main className="flex-1 flex flex-col bg-[#080808] relative">
         <div className="absolute top-4 left-4 z-50">
@@ -914,16 +925,16 @@ const BetsyDashboard = () => {
         </div>
 
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scrollbar-hide">
 
           {/* Integrated 3D Scene */}
           <div className="w-full max-w-4xl mx-auto mb-8">
             <SplineSceneBasic
               isCard={false}
               showStatus={false}
-              className="h-64"
+              className="h-48 md:h-64"
               title={
-                <h1 className="text-3xl font-bold text-white tracking-tight">
+                <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
                   Welcome, {session.user.user_metadata?.first_name || session.user.email?.split('@')[0]}
                 </h1>
               }
@@ -983,7 +994,7 @@ const BetsyDashboard = () => {
         </div>
 
         {/* INPUT AREA */}
-        <div className="p-6 max-w-4xl w-full mx-auto">
+        <div className="p-4 md:p-6 max-w-4xl w-full mx-auto">
           <div className="relative group">
             {/* Hidden Chat File Input */}
             <input
