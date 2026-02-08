@@ -40,18 +40,18 @@ export default function LandingPage() {
           <div className="w-full">
             <SplineSceneBasic 
               title={
-                <h1 className="text-4xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400">
+                <h1 className="text-4xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400 text-center md:text-left">
                   Business Intelligence <br />
                   <span className="text-indigo-500">Reimagined.</span>
                 </h1>
               }
               description={
-                <div className="mt-6 max-w-xl space-y-6">
-                  <p className="text-lg text-slate-400 leading-relaxed">
+                <div className="mt-6 max-w-xl space-y-6 mx-auto md:mx-0">
+                  <p className="text-lg text-slate-400 leading-relaxed text-center md:text-left">
                     Betsy AI transforms your raw data into actionable strategic insights. 
                     Upload documents, ask questions, and get semantic answers instantly.
                   </p>
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap gap-4 justify-center md:justify-start">
                     <Link href="/dashboard" className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 px-8 font-medium text-white transition-all duration-300 hover:bg-indigo-500 hover:scale-105 hover:shadow-[0_0_20px_rgba(79,70,229,0.4)]">
                       <span className="flex items-center gap-2">
                         Launch Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
