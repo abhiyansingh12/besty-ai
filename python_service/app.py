@@ -12,6 +12,7 @@ import io
 import base64
 from typing import Dict, Any, List
 import traceback
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -319,4 +320,6 @@ def serialize_result(result):
 if __name__ == '__main__':
     print("🐍 Starting Pandas Calculator Service...")
     print("📊 This is the SOURCE OF TRUTH for Excel/CSV data")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    port = int(os.environ.get("PORT", 5001))
+    debug = os.environ.get("FLASK_ENV", "development") == "development"
+    app.run(host='0.0.0.0', port=port, debug=debug)

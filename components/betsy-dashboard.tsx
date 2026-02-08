@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 import { Session } from '@supabase/supabase-js';
+import Papa from 'papaparse';
 
 // Types for our documents
 interface Doc {
@@ -37,6 +38,7 @@ const BetsyDashboard = () => {
   const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
   const [newDocName, setNewDocName] = useState('');
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
+  const [csvData, setCsvData] = useState<string[][] | null>(null);
 
 
 
@@ -204,9 +206,27 @@ const BetsyDashboard = () => {
 
     if (openMenuDocId) {
       document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [openMenuDocId]);
+
+  // Parse CSV for preview
+  useEffect(() => {
+    if (previewDoc && (previewDoc.file_type || '').toLowerCase() === 'csv') {
+      setCsvData(null);
+      Papa.parse(previewDoc.file_url, {
+        download: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          setCsvData(results.data as string[][]);
+        },
+        error: (err) => {
+          console.error('CSV Parse Error:', err);
+        }
+      });
+    } else {
+      setCsvData(null);
+    }
+  }, [previewDoc]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1094,13 +1114,24 @@ const BetsyDashboard = () => {
                 {previewDoc.file_type === 'pdf' ? <FileText size={20} className="text-indigo-400" /> : <Table size={20} className="text-emerald-400" />}
                 <h3 className="text-lg font-semibold text-white truncate max-w-md">{previewDoc.filename}</h3>
               </div>
-              <button
-                onClick={() => setPreviewDoc(null)}
-                className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                title="Close"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewDoc.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors mr-1"
+                  title="Download / Open Original"
+                >
+                  <Download size={20} />
+                </a>
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 bg-white/5 relative overflow-hidden rounded-b-2xl">
@@ -1110,7 +1141,7 @@ const BetsyDashboard = () => {
                   className="w-full h-full border-0"
                   title={previewDoc.filename}
                 />
-              ) : (['xlsx', 'xls', 'csv', 'doc', 'docx', 'ppt', 'pptx'].includes((previewDoc.file_type || '').toLowerCase())) ? (
+              ) : (['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'].includes((previewDoc.file_type || '').toLowerCase())) ? (
                 <div className="w-full h-full bg-white relative">
                   <iframe
                     src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewDoc.file_url)}`}
@@ -1119,6 +1150,40 @@ const BetsyDashboard = () => {
                     onError={() => console.error("Failed to load Office Viewer")}
                   />
                 </div>
+                ) : (['csv'].includes((previewDoc.file_type || '').toLowerCase())) ? (
+                  <div className="w-full h-full bg-white relative overflow-auto p-4">
+                    {csvData ? (
+                      <table className="min-w-full border-collapse border border-slate-200 text-sm text-slate-800">
+                        <thead>
+                          {csvData.length > 0 && (
+                            <tr className="bg-slate-100 sticky top-0 border-b border-slate-300">
+                              {csvData[0].map((header, i) => (
+                                <th key={i} className="border border-slate-200 px-4 py-2 font-semibold text-left whitespace-nowrap bg-slate-100 sticky top-0 z-10">
+                                  {header || `Col ${i + 1}`}
+                                </th>
+                              ))}
+                            </tr>
+                          )}
+                        </thead>
+                        <tbody>
+                          {csvData.slice(1).map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-50 border-b border-slate-100">
+                              {row.map((cell, j) => (
+                                <td key={j} className="border-r border-slate-200 px-4 py-2 whitespace-nowrap max-w-xs truncate" title={cell}>
+                                  {cell}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                        <p>Loading CSV Preview...</p>
+                      </div>
+                    )}
+                  </div>
               ) : (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes((previewDoc.file_type || '').toLowerCase())) ? (
                 <div className="w-full h-full flex items-center justify-center p-4 bg-black/40">
                   <img
