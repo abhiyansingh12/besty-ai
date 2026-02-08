@@ -67,12 +67,12 @@ export default function LandingPage() {
           </div>
 
           {/* Footer */}
-          <div className="mt-8 md:mt-24 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
-            <div className="flex items-center gap-4">
+          <div className="mt-6 md:mt-24 pt-6 md:pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6 text-xs md:text-sm text-slate-500">
+            <div className="flex items-center gap-3 md:gap-4">
               <p className="font-bold text-slate-300">Betsy AI</p>
-              <span className="text-slate-600 text-xs border-l border-white/10 pl-4">&copy; 2026 All rights reserved.</span>
+              <span className="text-slate-600 text-[10px] md:text-xs border-l border-white/10 pl-3 md:pl-4">&copy; 2026 All rights reserved.</span>
             </div>
-            <div className="flex gap-6">
+            <div className="flex gap-4 md:gap-6">
               <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
             </div>
