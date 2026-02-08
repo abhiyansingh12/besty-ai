@@ -69,42 +69,76 @@ export async function POST(req: NextRequest) {
     let context = '';
 
     if (documentId) {
-      console.log(`📂 Fetching full content for document: ${documentId}`);
       const { data: doc } = await supabase.from('documents').select('*').eq('id', documentId).single();
 
       if (doc) {
+        console.log(`📂 Fetching full content for document: ${documentId}`);
+
         try {
-          const fileRes = await fetch(doc.file_url);
-          const arrayBuffer = await fileRes.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          let fullText = '';
-
-          const lowerExt = (doc.file_type || '').toLowerCase();
-
-          if (lowerExt === 'pdf') {
-            const pdfData = await pdfParse(buffer);
-            fullText = pdfData.text;
-          } else if (['xlsx', 'xls'].includes(lowerExt)) {
-            const workbook = XLSX.read(buffer, { type: 'buffer' });
-            fullText = workbook.SheetNames.map(name => {
-              const sheet = workbook.Sheets[name];
-              return `Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(sheet);
-            }).join('\n\n');
-          } else if (lowerExt === 'csv') {
-            fullText = new TextDecoder().decode(buffer);
-          } else {
-            fullText = new TextDecoder().decode(buffer);
+          // Determine storage path: prefer explicit column, fallback to parsing URL
+          let storagePath = doc.storage_path;
+          if (!storagePath && doc.file_url) {
+            const urlParts = doc.file_url.split('/documents/');
+            if (urlParts.length > 1) {
+              storagePath = decodeURIComponent(urlParts[urlParts.length - 1]);
+            }
           }
 
-          // Clean text
-          fullText = fullText.replace(/\s+/g, ' ').trim();
+          if (storagePath) {
+            // Download using authenticated client (respects RLS)
+            const { data: fileBlob, error: downloadError } = await supabase.storage
+              .from('documents')
+              .download(storagePath);
 
-          if (fullText.length < 200000) { // < 50k tokens
-            context = `Full Document Content (Verified Source):\n${fullText}`;
-            console.log(`✅ Using full document text (${fullText.length} chars)`);
+            if (downloadError) {
+              console.error('❌ Storage download error:', downloadError);
+              throw new Error(`Failed to download file: ${downloadError.message}`);
+            }
+
+            if (fileBlob) {
+              const buffer = Buffer.from(await fileBlob.arrayBuffer());
+              let fullText = '';
+              const lowerExt = (doc.file_type || '').toLowerCase();
+
+              if (lowerExt === 'pdf') {
+                try {
+                  const pdfData = await pdfParse(buffer);
+                  fullText = pdfData.text;
+                } catch (e) {
+                  console.error('PDF Parse fail:', e);
+                  fullText = "Error extracting text from PDF.";
+                }
+              } else if (['xlsx', 'xls'].includes(lowerExt)) {
+                try {
+                  const workbook = XLSX.read(buffer, { type: 'buffer' });
+                  fullText = workbook.SheetNames.map(name => {
+                    const sheet = workbook.Sheets[name];
+                    return `Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(sheet);
+                  }).join('\n\n');
+                } catch (e) {
+                  console.error('Excel Parse fail:', e);
+                  fullText = "Error extracting text from Excel.";
+                }
+              } else if (lowerExt === 'csv') {
+                fullText = new TextDecoder().decode(buffer);
+              } else {
+                fullText = new TextDecoder().decode(buffer);
+              }
+
+              // Clean text
+              fullText = fullText.replace(/\s+/g, ' ').trim();
+
+              if (fullText.length < 200000) { // < 50k tokens
+                context = `Full Document Content (Verified Source):\n${fullText}`;
+                console.log(`✅ Using full document text (${fullText.length} chars)`);
+              } else {
+                console.warn('⚠️ Document too large for full context, falling back to vectors.');
+              }
+            }
           } else {
-            console.warn('⚠️ Document too large for full context, falling back to vectors.');
+            console.warn('⚠️ No storage path found for document, skipping full text download.');
           }
+
         } catch (err) {
           console.error('❌ Failed to fetch/parse full document:', err);
         }

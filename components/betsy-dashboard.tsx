@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FileText, Table, ShieldCheck, Search, 
+import {
+  FileText, Table, ShieldCheck, Search,
   UploadCloud, Send, ChevronRight, Loader2,
   PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye
 } from 'lucide-react';
@@ -57,13 +57,16 @@ const BetsyDashboard = () => {
       .from('documents')
       .select('*')
       .order('created_at', { ascending: false });
-    
+
     if (error) console.error('Error fetching docs:', error);
     else setDocuments(data || []);
   };
 
   const createOrLoadConversation = async () => {
     try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const userId = currentSession?.user?.id;
+
       // Try to load the most recent conversation
       const { data: existingConversations, error: fetchError } = await supabase
         .from('conversations')
@@ -86,7 +89,10 @@ const BetsyDashboard = () => {
         // Create a new conversation
         const { data: newConversation, error: createError } = await supabase
           .from('conversations')
-          .insert({ title: 'New Conversation' })
+          .insert({
+            title: 'New Conversation',
+            user_id: userId
+          })
           .select()
           .single();
 
@@ -227,7 +233,7 @@ const BetsyDashboard = () => {
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
-    
+
     setUploading(true);
     const file = event.target.files[0];
     const fileExt = file.name.split('.').pop();
@@ -247,7 +253,7 @@ const BetsyDashboard = () => {
 
     // 2. Insert into DB (Dual Track: files_raw + documents)
     const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
-    
+
     // Track exact raw file
     const { error: rawError } = await supabase
       .from('files_raw')
@@ -268,7 +274,8 @@ const BetsyDashboard = () => {
         filename: file.name,
         file_type: fileExt,
         file_url: publicUrl,
-        user_id: session?.user?.id
+        user_id: session?.user?.id,
+        storage_path: filePath
       })
       .select()
       .single();
@@ -288,7 +295,7 @@ const BetsyDashboard = () => {
         });
 
         if (!ingestResponse.ok) throw new Error('Ingestion failed');
-        
+
         console.log('Document processed successfully');
       } catch (err: any) {
         console.error('Error processing document:', err);
@@ -304,7 +311,7 @@ const BetsyDashboard = () => {
 
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
-    
+
     // Ensure we have a conversation (optional - chat works without it)
     let conversationId = currentConversationId;
     if (!conversationId) {
@@ -532,7 +539,7 @@ const BetsyDashboard = () => {
                   {authError}
                 </div>
               )}
-              
+
               <div className="space-y-4">
                 {isSignUp && (
                   <div className="grid grid-cols-2 gap-4">
@@ -640,7 +647,7 @@ const BetsyDashboard = () => {
             </button>
 
             <div className="text-center">
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsSignUp(!isSignUp)}
                 className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
@@ -656,7 +663,7 @@ const BetsyDashboard = () => {
 
   return (
     <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden">
-      
+
       {/* LEFT SIDEBAR: KNOWLEDGE BASE */}
       <aside className={cn(
         "border-r border-white/10 bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
@@ -670,14 +677,14 @@ const BetsyDashboard = () => {
         <div className="p-4 flex-1 overflow-y-auto space-y-6">
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-2">Knowledge Base</p>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
               onChange={handleFileUpload}
               accept=".pdf,.csv,.xlsx,.txt"
             />
-            <button 
+            <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 transition-all text-sm group disabled:opacity-50"
@@ -693,16 +700,16 @@ const BetsyDashboard = () => {
 
           <div className="space-y-1">
             {documents.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-500 italic">
-                  No documents yet.
-                </div>
+              <div className="p-4 text-center text-xs text-slate-500 italic">
+                No documents yet.
+              </div>
             ) : (
               documents.map(doc => (
-                <div 
+                <div
                   key={doc.id}
                   className={cn(
                     "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
-                    selectedDoc?.id === doc.id 
+                    selectedDoc?.id === doc.id
                       ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
                       : "hover:bg-white/5 text-slate-400"
                   )}
@@ -847,11 +854,11 @@ const BetsyDashboard = () => {
 
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
-          
+
           {/* Integrated 3D Scene */}
           <div className="w-full max-w-4xl mx-auto mb-8">
-            <SplineSceneBasic 
-              isCard={false} 
+            <SplineSceneBasic
+              isCard={false}
               showStatus={false}
               className="h-64"
               title={
@@ -861,9 +868,9 @@ const BetsyDashboard = () => {
               }
               description={
                 <p className="mt-2 text-slate-400 text-sm max-w-md">
-                   {selectedDoc 
-                     ? `Analyzing context from ${selectedDoc.filename}...` 
-                     : "Ask questions about your uploaded documents."}
+                  {selectedDoc
+                    ? `Analyzing context from ${selectedDoc.filename}...`
+                    : "Ask questions about your uploaded documents."}
                 </p>
               }
             />
@@ -918,25 +925,25 @@ const BetsyDashboard = () => {
         <div className="p-6 max-w-4xl w-full mx-auto">
           <div className="relative group">
             {/* Hidden Chat File Input */}
-            <input 
-              type="file" 
-              ref={chatFileInputRef} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={chatFileInputRef}
+              className="hidden"
               onChange={handleFileUpload}
               accept=".pdf,.csv,.xlsx,.txt"
             />
-            
-            <input 
-              type="text" 
+
+            <input
+              type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder={selectedDoc ? `Ask about ${selectedDoc.filename}...` : "Ask anything about your knowledge base..."}
               className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 pr-14 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            
+
             {/* Upload Button in Input */}
-            <button 
+            <button
               onClick={() => chatFileInputRef.current?.click()}
               disabled={uploading}
               className="absolute left-3 top-2.5 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50"
@@ -949,7 +956,7 @@ const BetsyDashboard = () => {
               )}
             </button>
 
-            <button 
+            <button
               onClick={handleSendMessage}
               disabled={!chatInput.trim()}
               className="absolute right-3 top-2.5 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors disabled:bg-slate-700 disabled:opacity-50"
@@ -1086,8 +1093,8 @@ const BetsyDashboard = () => {
                     className="w-full h-full border-0"
                     title={previewDoc.filename}
                   />
-                      </div>
-                    ) : (
+                </div>
+              ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4 p-8">
                   <Table size={48} className="text-slate-600" />
                   <p>Preview not available for this file type.</p>

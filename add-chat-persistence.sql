@@ -1,7 +1,7 @@
 -- Create table for storing chat conversations
 CREATE TABLE IF NOT EXISTS public.conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users NOT NULL,
+  user_id UUID REFERENCES auth.users NOT NULL DEFAULT auth.uid(),
   title TEXT DEFAULT 'New Conversation',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
