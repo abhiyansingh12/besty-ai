@@ -40,7 +40,22 @@ const BetsyDashboard = () => {
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
   const [csvData, setCsvData] = useState<string[][] | null>(null);
 
+  // Responsive Sidebar: Close on mobile, Open on desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setIsLeftSidebarOpen(false);
+      } else {
+        setIsLeftSidebarOpen(true);
+      }
+    };
 
+    // Set initial state
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Auth state
   const [email, setEmail] = useState('');
@@ -925,7 +940,7 @@ const BetsyDashboard = () => {
         </div>
 
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 pt-14 md:p-8 space-y-8 scrollbar-hide">
 
           {/* Integrated 3D Scene */}
           <div className="w-full max-w-4xl mx-auto mb-8">
