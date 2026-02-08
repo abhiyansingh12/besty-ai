@@ -26,7 +26,6 @@ create table if not exists public.documents (
   filename text not null,
   file_url text not null, -- Supabase Storage URL
   file_type text not null, -- 'pdf', 'csv', 'xlsx', etc.
-  embedding vector(1536), -- For semantic search (requires pgvector extension)
   created_at timestamptz default now()
 );
 
