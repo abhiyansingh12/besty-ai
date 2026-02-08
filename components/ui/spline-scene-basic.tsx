@@ -24,8 +24,8 @@ export function SplineSceneBasic({
 }: SplineSceneBasicProps) {
   const Wrapper = isCard ? Card : 'div';
   const baseClass = isCard 
-    ? "w-full h-[500px] bg-black/[0.96] relative overflow-hidden" 
-    : "w-full h-[500px] relative overflow-hidden";
+    ? "w-full min-h-[500px] bg-black/[0.96] relative overflow-hidden"
+    : "w-full min-h-[500px] relative overflow-hidden";
 
   return (
     <Wrapper className={cn(baseClass, className)}>
@@ -34,7 +34,7 @@ export function SplineSceneBasic({
         fill="white"
       />
       
-      <div className="flex h-full">
+      <div className="flex h-full min-h-[500px]">
         {/* Left content */}
         <div className="flex-1 p-8 relative z-10 flex flex-col justify-center">
           {title || (
@@ -80,8 +80,8 @@ export function SplineSceneBasic({
           )}
         </div>
 
-        {/* Right content */}
-        <div className="flex-1 relative">
+        {/* Right content - Only render if we have space */}
+        <div className="flex-1 relative min-h-[400px] min-w-[400px]">
           <SplineScene 
             scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
             className="w-full h-full"

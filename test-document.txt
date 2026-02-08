@@ -1,0 +1,32 @@
+BETSY AI TEST DOCUMENT
+======================
+
+About Betsy AI
+--------------
+Betsy AI is a semantic search platform that allows users to upload documents and ask questions about them using natural language. The system uses OpenAI embeddings and vector search to find relevant information.
+
+Key Features
+------------
+1. Document Upload: Supports PDF, CSV, Excel, and text files
+2. Semantic Search: Uses vector embeddings for intelligent search
+3. Natural Language Queries: Ask questions in plain English
+4. Secure: End-to-end encryption with Row Level Security
+
+Technical Stack
+---------------
+- Frontend: Next.js and React
+- Backend: Supabase with pgvector
+- AI: OpenAI GPT-4 and text-embedding-3-small
+- Authentication: Supabase Auth
+
+Example Questions You Can Ask
+------------------------------
+- What is Betsy AI?
+- What file types does Betsy support?
+- What technology stack does Betsy use?
+- How does Betsy handle security?
+
+Contact Information
+-------------------
+For support, visit our dashboard or check the documentation.
+Website: betsy-ai.vercel.app

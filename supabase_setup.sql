@@ -26,7 +26,6 @@ create table if not exists public.documents (
   filename text not null,
   file_url text not null, -- Supabase Storage URL
   file_type text not null, -- 'pdf', 'csv', 'xlsx', etc.
-  embedding vector(1536), -- For semantic search (requires pgvector extension)
   created_at timestamptz default now()
 );
 
@@ -103,7 +102,8 @@ begin
     1 - (document_chunks.embedding <=> query_embedding) as similarity
   from document_chunks
   join documents on documents.id = document_chunks.document_id
-  where 1 - (document_chunks.embedding <=> query_embedding) > match_threshold
+  where documents.user_id = auth.uid()
+  and 1 - (document_chunks.embedding <=> query_embedding) > match_threshold
   and (filter_document_id is null or document_chunks.document_id = filter_document_id)
   order by document_chunks.embedding <=> query_embedding
   limit match_count;
