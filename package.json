@@ -15,7 +15,6 @@
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "csv-parse": "^6.1.0",
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",
     "mini-svg-data-uri": "^1.4.4",
