@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  FileText, Table, ShieldCheck, Search,
+  FileText, Table, Search,
   UploadCloud, Send, ChevronRight, Loader2,
   PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye
 } from 'lucide-react';
@@ -880,11 +880,6 @@ const BetsyDashboard = () => {
         </div>
 
         <div className="p-4 bg-white/[0.02]">
-          {/* Secured Badge */}
-          <div className="mb-4 flex items-center gap-2 text-[10px] text-green-400/80 font-medium px-2">
-            <ShieldCheck size={12} />
-            <span>SECURED END-TO-END</span>
-          </div>
 
           {/* User Profile Section - Clickable Toggle */}
 
