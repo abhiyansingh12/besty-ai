@@ -813,10 +813,10 @@ const BetsyDashboard = () => {
                           e.stopPropagation();
                           handlePreviewDocument(doc);
                         }}
-                        className="p-1.5 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                        className="p-2 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
                         title="Open File Preview"
                       >
-                        <Eye size={14} />
+                        <Eye size={16} />
                       </button>
                     </div>
                   </div>
@@ -828,9 +828,10 @@ const BetsyDashboard = () => {
                         e.stopPropagation();
                         setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
                       }}
-                      className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                      className="p-2 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                      aria-label="More options"
                     >
-                      <MoreVertical size={14} className="text-slate-400" />
+                      <MoreVertical size={16} className="text-slate-400" />
                     </button>
 
                     {/* Dropdown menu */}
