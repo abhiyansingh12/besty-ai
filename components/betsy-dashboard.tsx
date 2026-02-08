@@ -40,7 +40,22 @@ const BetsyDashboard = () => {
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
   const [csvData, setCsvData] = useState<string[][] | null>(null);
 
+  // Responsive Sidebar: Close on mobile, Open on desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setIsLeftSidebarOpen(false);
+      } else {
+        setIsLeftSidebarOpen(true);
+      }
+    };
 
+    // Set initial state
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Auth state
   const [email, setEmail] = useState('');
@@ -197,16 +212,21 @@ const BetsyDashboard = () => {
   }, []);
 
   // Close dropdown menu when clicking outside
+  // Close dropdown menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (openMenuDocId) {
-        setOpenMenuDocId(null);
-      }
+      // Don't close if clicking the menu itself (though stopPropagation in button handles most)
+      // The button needs to be excluded if not stopPropagated, but since we use stopProp, this is fine.
+      setOpenMenuDocId(null);
     };
 
     if (openMenuDocId) {
       document.addEventListener('click', handleClickOutside);
     }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   }, [openMenuDocId]);
 
   // Parse CSV for preview
@@ -727,8 +747,11 @@ const BetsyDashboard = () => {
 
       {/* LEFT SIDEBAR: KNOWLEDGE BASE */}
       <aside className={cn(
-        "border-r border-white/10 bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
-        isLeftSidebarOpen ? "w-72 opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-full border-0"
+        "border-r border-white/10 bg-black/95 md:bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
+        "fixed inset-y-0 left-0 z-[60] h-full md:relative md:translate-x-0",
+        isLeftSidebarOpen
+          ? "w-72 translate-x-0 opacity-100 shadow-2xl"
+          : "-translate-x-full w-72 opacity-0 md:w-0 md:translate-x-0 md:opacity-0 md:border-0"
       )}>
         <div className="p-6 border-b border-white/10 flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white">B</div>
@@ -772,7 +795,8 @@ const BetsyDashboard = () => {
                     "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
                     activeDoc?.id === doc.id
                       ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
-                      : "hover:bg-white/5 text-slate-400"
+                      : "hover:bg-white/5 text-slate-400",
+                    openMenuDocId === doc.id && "z-20 bg-white/5 ring-1 ring-white/10"
                   )}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -795,10 +819,10 @@ const BetsyDashboard = () => {
                           e.stopPropagation();
                           handlePreviewDocument(doc);
                         }}
-                        className="p-1.5 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="p-2 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
                         title="Open File Preview"
                       >
-                        <Eye size={14} />
+                        <Eye size={16} />
                       </button>
                     </div>
                   </div>
@@ -810,9 +834,10 @@ const BetsyDashboard = () => {
                         e.stopPropagation();
                         setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
                       }}
-                      className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      className="p-2 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                      aria-label="More options"
                     >
-                      <MoreVertical size={14} className="text-slate-400" />
+                      <MoreVertical size={16} className="text-slate-400" />
                     </button>
 
                     {/* Dropdown menu */}
@@ -902,6 +927,14 @@ const BetsyDashboard = () => {
         </div>
       </aside>
 
+      {/* Mobile Backdrop */}
+      {isLeftSidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsLeftSidebarOpen(false)}
+        />
+      )}
+
       {/* CENTER: SEMANTIC CHAT */}
       <main className="flex-1 flex flex-col bg-[#080808] relative">
         <div className="absolute top-4 left-4 z-50">
@@ -914,16 +947,16 @@ const BetsyDashboard = () => {
         </div>
 
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto px-4 pb-4 pt-14 md:p-8 space-y-8 scrollbar-hide">
 
           {/* Integrated 3D Scene */}
           <div className="w-full max-w-4xl mx-auto mb-8">
             <SplineSceneBasic
               isCard={false}
               showStatus={false}
-              className="h-64"
+              className="h-48 md:h-64"
               title={
-                <h1 className="text-3xl font-bold text-white tracking-tight">
+                <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
                   Welcome, {session.user.user_metadata?.first_name || session.user.email?.split('@')[0]}
                 </h1>
               }
@@ -983,7 +1016,7 @@ const BetsyDashboard = () => {
         </div>
 
         {/* INPUT AREA */}
-        <div className="p-6 max-w-4xl w-full mx-auto">
+        <div className="p-4 md:p-6 max-w-4xl w-full mx-auto">
           <div className="relative group">
             {/* Hidden Chat File Input */}
             <input

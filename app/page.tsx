@@ -33,25 +33,25 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="flex-1 flex flex-col pt-32 pb-20 px-6">
-        <div className="container mx-auto max-w-6xl space-y-12">
+      <section className="flex-1 flex flex-col pt-16 md:pt-32 pb-8 md:pb-20 px-6">
+        <div className="container mx-auto max-w-6xl space-y-6 md:space-y-12">
           
           {/* Reusing the Spline Scene with Custom Landing Copy */}
           <div className="w-full">
             <SplineSceneBasic 
               title={
-                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400">
+                <h1 className="text-4xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400 text-center md:text-left">
                   Business Intelligence <br />
                   <span className="text-indigo-500">Reimagined.</span>
                 </h1>
               }
               description={
-                <div className="mt-6 max-w-xl space-y-6">
-                  <p className="text-lg text-slate-400 leading-relaxed">
+                <div className="mt-6 max-w-xl space-y-6 mx-auto md:mx-0">
+                  <p className="text-lg text-slate-400 leading-relaxed text-center md:text-left">
                     Betsy AI transforms your raw data into actionable strategic insights. 
                     Upload documents, ask questions, and get semantic answers instantly.
                   </p>
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap gap-4 justify-center md:justify-start">
                     <Link href="/dashboard" className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 px-8 font-medium text-white transition-all duration-300 hover:bg-indigo-500 hover:scale-105 hover:shadow-[0_0_20px_rgba(79,70,229,0.4)]">
                       <span className="flex items-center gap-2">
                         Launch Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -67,12 +67,12 @@ export default function LandingPage() {
           </div>
 
           {/* Footer */}
-          <div className="mt-24 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
-            <div className="flex items-center gap-4">
+          <div className="mt-6 md:mt-24 pt-6 md:pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6 text-xs md:text-sm text-slate-500">
+            <div className="flex items-center gap-3 md:gap-4">
               <p className="font-bold text-slate-300">Betsy AI</p>
-              <span className="text-slate-600 text-xs border-l border-white/10 pl-4">&copy; 2026 All rights reserved.</span>
+              <span className="text-slate-600 text-[10px] md:text-xs border-l border-white/10 pl-3 md:pl-4">&copy; 2026 All rights reserved.</span>
             </div>
-            <div className="flex gap-6">
+            <div className="flex gap-4 md:gap-6">
               <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
             </div>
