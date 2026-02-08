@@ -34,16 +34,27 @@ export function SplineSceneBasic({
         fill="white"
       />
       
-      <div className="flex flex-col md:flex-row h-full min-h-[500px]">
-        {/* Left content */}
-        <div className="flex-1 p-8 relative z-10 flex flex-col justify-center">
+      <div className="grid grid-cols-1 md:grid-cols-2 h-full min-h-[500px] md:align-content-center">
+        {/* TITLE - Order 1 on Mobile, Col 1 Row 1 on Desktop */}
+        <div className="p-6 pb-2 md:p-8 md:pb-4 relative z-10 flex flex-col justify-end order-1 md:order-1">
           {title || (
             <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-neutral-50 to-neutral-400">
               Secure Data <br />
               <span className="text-indigo-400">Meaning Extraction</span>
             </h1>
           )}
-          
+        </div>
+
+        {/* ROBOT - Order 2 on Mobile, Col 2 Row 1-2 on Desktop */}
+        <div className="relative h-[300px] w-full md:h-full md:w-auto md:min-h-[500px] md:min-w-[400px] order-2 md:col-start-2 md:row-start-1 md:row-end-3 md:order-2">
+          <SplineScene
+            scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
+            className="w-full h-full"
+          />
+        </div>
+
+        {/* DESCRIPTION - Order 3 on Mobile, Col 1 Row 2 on Desktop */}
+        <div className="p-6 pt-2 md:p-8 md:pt-4 relative z-10 flex flex-col justify-start order-3 md:order-3">
           {description || (
             <p className="mt-4 text-neutral-300 max-w-lg leading-relaxed">
               Upload your <strong>Excel, CSV, and PDF</strong> files into our encrypted vector database. 
@@ -78,14 +89,6 @@ export function SplineSceneBasic({
               </div>
             </div>
           )}
-        </div>
-
-        {/* Right content - Only render if we have space */}
-        <div className="flex-1 relative h-[300px] w-full md:h-auto md:w-auto md:min-h-[400px] md:min-w-[400px]">
-          <SplineScene 
-            scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
-            className="w-full h-full"
-          />
         </div>
       </div>
     </Wrapper>
