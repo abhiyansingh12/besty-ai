@@ -352,7 +352,12 @@ const BetsyDashboard = () => {
         alert(`Upload warning: ${msg}. Check console for details.`);
       }
 
-      fetchDocuments();
+      await fetchDocuments();
+
+      // Automatically select the newly uploaded document
+      if (insertedDoc) {
+        handleDocumentClick(insertedDoc as Doc);
+      }
     }
     setUploading(false);
   };
