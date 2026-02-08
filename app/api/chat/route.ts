@@ -2,9 +2,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import * as XLSX from 'xlsx';
-import { parse as csvParse } from 'csv-parse/sync';
-const pdfParse = require('pdf-parse');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -12,7 +9,7 @@ const openai = new OpenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, documentId } = await req.json();
+    const { message, documentId, conversationId } = await req.json();
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -49,158 +46,119 @@ export async function POST(req: NextRequest) {
 
     console.log('✅ User authenticated:', user.email);
     console.log('🔍 Query:', message);
-    console.log('📄 Document filter:', documentId || 'All documents');
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ 
-        answer: "Please add your OPENAI_API_KEY to .env to enable semantic search." 
+    // -------------------------------------------------------------------------
+    // ASSISTANTS API FLOW
+    // -------------------------------------------------------------------------
+
+    // 1. Get or Create Assistant
+    let assistantId = process.env.OPENAI_ASSISTANT_ID;
+
+    if (!assistantId) {
+      // Create a temporary one if environment variable is missing
+      // NOTE: This will create a new assistant every restart if not saved in .env
+      console.log('⚠️ No OPENAI_ASSISTANT_ID found. Creating a transient assistant...');
+      const assistant = await openai.beta.assistants.create({
+        name: "Betsy Data Analyst",
+        instructions: "You are an expert Data Analyst. You answer questions based on the attached files. Use the file_search tool to find information.",
+        model: "gpt-4o",
+        tools: [{ type: "file_search" }],
       });
+      assistantId = assistant.id;
+      console.log(`✅ Created Assistant: ${assistantId}`);
     }
 
-    // 1. Generate embedding for query (always needed for fallback or relevance)
-    const embeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: message,
-    });
-    const embedding = embeddingResponse.data[0].embedding;
-    console.log('✅ Generated query embedding');
+    // 2. Handle Conversation / Thread
+    let threadId = '';
 
-    // 2. Context Retrieval (Hybrid: Full Text for selected doc OR Vector Search)
-    let context = '';
+    // If we have a conversationId, try to find the thread
+    if (conversationId) {
+      const { data: conv } = await supabase.from('conversations')
+        .select('openai_thread_id')
+        .eq('id', conversationId)
+        .single();
+
+      if (conv?.openai_thread_id) {
+        threadId = conv.openai_thread_id;
+        console.log(`🧵 Resuming Thread: ${threadId}`);
+      }
+    }
+
+    if (!threadId) {
+      // Create new Thread
+      const thread = await openai.beta.threads.create();
+      threadId = thread.id;
+      console.log(`🧵 Created New Thread: ${threadId}`);
+
+      // If conversationId exists, update it. If not, the frontend might create one later.
+      if (conversationId) {
+        await supabase.from('conversations')
+          .update({ openai_thread_id: threadId } as any)
+          .eq('id', conversationId);
+      }
+    }
+
+    // 3. Prepare Message Attachments
+    const attachments: any[] = [];
 
     if (documentId) {
-      const { data: doc } = await supabase.from('documents').select('*').eq('id', documentId).single();
+      // Fetch OpenAI File ID
+      const { data: doc } = await supabase.from('documents')
+        .select('openai_file_id')
+        .eq('id', documentId)
+        .single();
 
-      if (doc) {
-        console.log(`📂 Fetching full content for document: ${documentId}`);
-
-        try {
-          // Determine storage path: prefer explicit column, fallback to parsing URL
-          let storagePath = doc.storage_path;
-          if (!storagePath && doc.file_url) {
-            const urlParts = doc.file_url.split('/documents/');
-            if (urlParts.length > 1) {
-              storagePath = decodeURIComponent(urlParts[urlParts.length - 1]);
-            }
-          }
-
-          if (storagePath) {
-            // Download using authenticated client (respects RLS)
-            const { data: fileBlob, error: downloadError } = await supabase.storage
-              .from('documents')
-              .download(storagePath);
-
-            if (downloadError) {
-              console.error('❌ Storage download error:', downloadError);
-              throw new Error(`Failed to download file: ${downloadError.message}`);
-            }
-
-            if (fileBlob) {
-              const buffer = Buffer.from(await fileBlob.arrayBuffer());
-              let fullText = '';
-              const lowerExt = (doc.file_type || '').toLowerCase();
-
-              if (lowerExt === 'pdf') {
-                try {
-                  const pdfData = await pdfParse(buffer);
-                  fullText = pdfData.text;
-                } catch (e) {
-                  console.error('PDF Parse fail:', e);
-                  fullText = "Error extracting text from PDF.";
-                }
-              } else if (['xlsx', 'xls'].includes(lowerExt)) {
-                try {
-                  const workbook = XLSX.read(buffer, { type: 'buffer' });
-                  fullText = workbook.SheetNames.map(name => {
-                    const sheet = workbook.Sheets[name];
-                    return `Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(sheet);
-                  }).join('\n\n');
-                } catch (e) {
-                  console.error('Excel Parse fail:', e);
-                  fullText = "Error extracting text from Excel.";
-                }
-              } else if (lowerExt === 'csv') {
-                fullText = new TextDecoder().decode(buffer);
-              } else {
-                fullText = new TextDecoder().decode(buffer);
-              }
-
-              // Clean text
-              fullText = fullText.replace(/\s+/g, ' ').trim();
-
-              if (fullText.length < 200000) { // < 50k tokens
-                context = `Full Document Content (Verified Source):\n${fullText}`;
-                console.log(`✅ Using full document text (${fullText.length} chars)`);
-              } else {
-                console.warn('⚠️ Document too large for full context, falling back to vectors.');
-              }
-            }
-          } else {
-            console.warn('⚠️ No storage path found for document, skipping full text download.');
-          }
-
-        } catch (err) {
-          console.error('❌ Failed to fetch/parse full document:', err);
-        }
-      }
-    }
-
-    let chunks: any[] = [];
-
-    // Fallback to Vector Search if no context yet
-    if (!context) {
-      console.log('🔍 Performing vector search...');
-      const { data: searchResults, error } = await supabase.rpc('match_documents', {
-        query_embedding: embedding,
-        match_threshold: 0.1,
-        match_count: 5,
-        filter_document_id: documentId,
-      });
-
-      if (error) {
-        console.error('❌ Supabase search error:', error);
-        // Don't fail hard, try answering without context potentially? No, return error.
+      if (doc?.openai_file_id) {
+        console.log(`📎 Attaching File: ${doc.openai_file_id}`);
+        attachments.push({
+          file_id: doc.openai_file_id,
+          tools: [{ type: "file_search" }]
+        });
       } else {
-        chunks = searchResults || [];
-        context = chunks.map((c: any) => c.content).join('\n\n');
+        console.warn(`⚠️ Document ${documentId} selected but has no openai_file_id. Was it ingested with the new flow?`);
       }
     }
 
-    if (chunks.length > 0) {
-      console.log(`📊 Found ${chunks.length} chunks.`);
-      console.log('🎯 Top match:', chunks[0].similarity?.toFixed(3));
-    } else if (!context) {
-      console.warn('⚠️ No context found (neither full text nor vector matches).');
+    // 4. Add Message to Thread
+    await openai.beta.threads.messages.create(
+      threadId,
+      {
+        role: "user",
+        content: message,
+        attachments: attachments.length > 0 ? attachments : undefined
+      }
+    );
+
+    // 5. Run Assistant
+    console.log('🏃‍♂️ Running Assistant...');
+
+    const run = await openai.beta.threads.runs.createAndPoll(
+      threadId,
+      {
+        assistant_id: assistantId,
+      }
+    );
+
+    if (run.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(
+        run.thread_id
+      );
+
+      // Get the last message which (should be) from the assistant
+      const lastMessage = messages.data.find(m => m.role === 'assistant');
+
+      let answer = "No response generated.";
+      if (lastMessage && lastMessage.content[0].type === 'text') {
+        answer = lastMessage.content[0].text.value;
+      }
+
+      console.log('✅ Assistant responded.');
+      return NextResponse.json({ answer, threadId });
+
+    } else {
+      console.error('❌ Run status:', run.status);
+      return NextResponse.json({ error: `Assistant run failed with status: ${run.status}` }, { status: 500 });
     }
-
-    // 3. Generate answer using retrieved context
-    console.log(`💬 Final Context length: ${context.length} characters`);
-
-    // Updated System Prompt for Definitions & Calculations
-    const systemPrompt = `You are an expert AI Data Analyst. Your goal is to help the user understand their documents.
-
-INSTRUCTIONS:
-1. **Definitions**: If the user asks for a definition (e.g., "What is YTD?"), prioritize definitions found in the document. If not found, use your general business knowledge to define it, but clearly state "General Definition:" vs "Document Definition:".
-2. **Calculations**: If the user asks for calculations (e.g., "Total sales", "Average price"), USE THE PROVIDED CONTEXT DATA. Truncated data identifiers are usually irrelevant. 
-   - If the context contains the raw rows (CSV/Excel data), perform the calculation precisely.
-   - If the context is partial (chunks), explain that the calculation is based on the visible data only or cite the specific values you see.
-3. **Citations**: Always explicitly cite the document name or section if possible.
-
-CONTEXT:
-${context}`;
-
-    const chatResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
-      ],
-    });
-    console.log('✅ Generated AI response');
-
-    const answer = chatResponse.choices[0].message.content;
-
-    return NextResponse.json({ answer, chunks }); // Return chunks for debug/citation
 
   } catch (err: any) {
     console.error('Error in chat API:', err);
