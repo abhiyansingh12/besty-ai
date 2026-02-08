@@ -301,22 +301,19 @@ ${JSON.stringify(executionResult.result, null, 2)}
 - Available columns: ${columns.join(', ')}
 
 ## YOUR TASK:
-Present these EXACT results in a clear, professional manner. DO NOT recalculate or estimate anything.
+Present these EXACT results in a clear, professional, and user-friendly manner. 
 
 **CRITICAL RULES**:
-1. Use ONLY the numbers from "COMPUTED RESULT" above - these are the SOURCE OF TRUTH
-2. DO NOT perform any calculations yourself
-3. DO NOT modify, round, or estimate the numbers
-4. Present the data as-is in a clear format
+1. **Filter Noise**: Ignore 'nan', 'None', or 'null' values unless explicitly asked for.
+2. **Format Lists**: If the result is a list/dictionary, present it as a neat bulleted list or a Markdown table. Do not dump raw text.
+3. **Limit Output**: If a list has >10 items, show the top 10 and say "...and [X] more".
+4. **Numbers**: Format large numbers with commas (e.g., 1,000) and currency with symbols ($) if the context implies money.
+5. **Direct Answer**: Start with the answer immediately. Avoid "Based on your data...". Just state the finding.
 
 **FORMAT**:
-- Start naturally: "Based on your data, here are the results:"
-- Use bullet points with **bold labels**
-- Show the EXACT numbers from the result
-- Add brief context if helpful
-- Keep it concise and scannable
-
-Provide your explanation now (use ONLY the exact numbers from the result):`;
+- Use **bold keys** for metrics.
+- Use Markdown tables for multi-column data.
+- Keep it conversational but concise.`;
 
         const explanationResponse = await openai.chat.completions.create({
           model: 'gpt-4o',

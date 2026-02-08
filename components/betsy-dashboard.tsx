@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils';
 
 import { Session } from '@supabase/supabase-js';
 import Papa from 'papaparse';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Types for our documents
 interface Doc {
@@ -996,9 +998,11 @@ const BetsyDashboard = () => {
                       ? "bg-white/5 border border-white/10 text-slate-300"
                       : "bg-indigo-600 text-white"
                   )}>
-                    <p className="leading-relaxed text-sm">
-                      {msg.content}
-                    </p>
+                    <div className="leading-relaxed text-sm [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>p]:mb-2 last:[&>p]:mb-0 [&>strong]:font-bold [&>strong]:text-indigo-300 [&>table]:w-full [&>table]:border-collapse [&>th]:border-b [&>th]:border-white/20 [&>th]:text-left [&>th]:p-2 [&>td]:p-2 [&>td]:border-b [&>td]:border-white/10">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                   {msg.role === 'ai' && idx === (conversations[activeDoc?.id || 'global'] || []).length - 1 && activeDoc && (
                     <div className="flex gap-2">
