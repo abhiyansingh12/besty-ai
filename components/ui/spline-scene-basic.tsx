@@ -34,7 +34,7 @@ export function SplineSceneBasic({
         fill="white"
       />
       
-      <div className="flex h-full min-h-[500px]">
+      <div className="flex flex-col md:flex-row h-full min-h-[500px]">
         {/* Left content */}
         <div className="flex-1 p-8 relative z-10 flex flex-col justify-center">
           {title || (
@@ -81,7 +81,7 @@ export function SplineSceneBasic({
         </div>
 
         {/* Right content - Only render if we have space */}
-        <div className="flex-1 relative min-h-[400px] min-w-[400px]">
+        <div className="flex-1 relative h-[300px] w-full md:h-auto md:w-auto md:min-h-[400px] md:min-w-[400px]">
           <SplineScene 
             scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
             className="w-full h-full"

@@ -33,14 +33,14 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="flex-1 flex flex-col pt-32 pb-20 px-6">
+      <section className="flex-1 flex flex-col pt-24 md:pt-32 pb-20 px-6">
         <div className="container mx-auto max-w-6xl space-y-12">
           
           {/* Reusing the Spline Scene with Custom Landing Copy */}
           <div className="w-full">
             <SplineSceneBasic 
               title={
-                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400">
+                <h1 className="text-4xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400">
                   Business Intelligence <br />
                   <span className="text-indigo-500">Reimagined.</span>
                 </h1>
