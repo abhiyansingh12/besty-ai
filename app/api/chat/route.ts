@@ -146,10 +146,11 @@ export async function POST(req: NextRequest) {
                   fileContext = new TextDecoder().decode(buffer);
                 } catch (e) { console.error(e); }
               }
-              // Truncate if too huge
-              if (fileContext.length > 100000) {
-                console.warn('⚠️ File too large, truncating context.');
-                fileContext = fileContext.substring(0, 100000);
+              // Truncate if too huge - REDUCED to prevent 429 errors
+              // 100k chars is too much (~25k tokens). Reduced to 25k chars (~6k tokens)
+              if (fileContext.length > 25000) {
+                console.warn(`⚠️ File too large (${fileContext.length} chars), truncating to 25k chars to prevent 429 errors.`);
+                fileContext = fileContext.substring(0, 25000) + '...[TRUNCATED]';
               }
             }
           }

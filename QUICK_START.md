@@ -1,5 +1,21 @@
 # 🚀 Quick Start Guide - Excel/CSV ChatGPT-like Processing
 
+## 🚨 START HERE: Check Service Health! (Critical)
+
+Before uploading any files, verify the Pandas service is running to avoid "429 Request Too Large" errors:
+
+```bash
+curl http://localhost:5001/health
+```
+
+**Must return:** `{"status": "healthy", "service": "pandas-calculator"}`
+
+If it fails or hangs:
+```bash
+cd python_service
+./start.sh
+```
+
 ## ✅ What's Running
 
 Your **Pandas Calculator Service** is now running at:
@@ -41,24 +57,6 @@ Behind the scenes, your system will:
 3. ✅ Python service executes the code (accurate calculations)
 4. ✅ LLM explains results in natural language
 
-**Example:**
-
-**Your question:** "What are total expenses for Tennessee?"
-
-**What happens:**
-```python
-# LLM generates this code:
-result = df[df['State'] == 'Tennessee']['Amount'].sum()
-
-# Python executes it:
-# Result: 210000
-
-# LLM explains:
-"Based on your uploaded file, the total expenses for 
-Tennessee are $210,000. This includes all categories 
-(Sales, Marketing, and Operations) across both months."
-```
-
 ## 📊 Architecture
 
 ```
@@ -72,19 +70,19 @@ BETSY AI (LLM)   →  Explains results naturally
                     ↓
 YOU RECEIVE      →  "Here are total sales by state:
                      • California: $257,000
-                     • Texas: $201,000..."
+                     • Texas: $180,000..."
 ```
 
 ## 🛠️ Running Services
 
-### Terminal 1: Python Pandas Service (Already Running ✅)
+### Terminal 1: Python Pandas Service (Start This First)
 ```bash
 cd python_service
 ./start.sh
 ```
 **Status**: Running on http://localhost:5001
 
-### Terminal 2: Next.js App (Start This Now)
+### Terminal 2: Next.js App
 ```bash
 npm run dev
 ```
@@ -110,26 +108,10 @@ cd python_service
 ```
 
 ### Check if service is running:
-```bash
-curl http://localhost:5001/health
-```
-
-Expected response:
-```json
-{
-  "status": "healthy",
-  "service": "pandas-calculator"
-}
-```
+`curl http://localhost:5001/health`
 
 ### Port already in use:
-```bash
-# Find process
-lsof -i :5001
-
-# Kill it
-kill -9 <PID>
-```
+`lsof -i :5001` then `kill -9 <PID>`
 
 ## 🎨 Key Features
 
@@ -140,28 +122,6 @@ kill -9 <PID>
 ✅ **Secure code execution** - Sandboxed Python environment
 ✅ **Natural language explanations** - Easy to understand results
 
-## 🌟 Example Questions to Try
-
-**Sales Analysis:**
-- "What are total sales by state?"
-- "Which state has the highest sales?"
-- "Show me average sales across all states"
-
-**Category Breakdown:**
-- "Break down expenses by category"
-- "What's the total marketing spend?"
-- "Compare operations costs between states"
-
-**Specific Queries:**
-- "What are Tennessee's expenses?"
-- "Show me California's marketing budget"
-- "What's the total for February?"
-
-**Comparisons:**
-- "Which category has the highest spending?"
-- "Compare Texas and New York sales"
-- "Show me the state with lowest operations cost"
-
 ## 🚀 You're Ready!
 
 Your Excel/CSV processing system is **fully operational** and follows the exact pattern:
@@ -171,9 +131,3 @@ Your Excel/CSV processing system is **fully operational** and follows the exact 
 - **LLM = Interpreter** (Natural language understanding)
 
 Just like ChatGPT handles spreadsheets! 🎉
-
----
-
-**Need help?** Check the documentation in:
-- `IMPLEMENTATION_SUMMARY.md`
-- `EXCEL_CSV_PROCESSING.md`

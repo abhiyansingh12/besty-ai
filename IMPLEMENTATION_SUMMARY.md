@@ -347,7 +347,7 @@ cd python_service && ./start.sh
 ### Connection errors
 - Ensure Python service is running
 - Check `.env` has `PANDAS_SERVICE_URL=http://localhost:5001`
-- Verify no firewall blocking port 5001
+- Verify firewall settings
 
 ## Resources
 
