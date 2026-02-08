@@ -3,12 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Table, ShieldCheck, Search, 
-  UploadCloud, Send, ChevronRight, Database, Loader2,
-  PanelLeft, PanelRight, User, Settings, LogOut
+  UploadCloud, Send, ChevronRight, Loader2,
+  PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye
 } from 'lucide-react';
 import { SplineSceneBasic } from "@/components/ui/spline-scene-basic";
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+
 import { Session } from '@supabase/supabase-js';
 
 // Types for our documents
@@ -17,13 +18,12 @@ interface Doc {
   filename: string;
   file_type: string;
   created_at: string;
-  url: string;
+  file_url: string;
   user_id: string;
 }
 
 const BetsyDashboard = () => {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Doc[]>([]);
@@ -31,10 +31,15 @@ const BetsyDashboard = () => {
   const [uploading, setUploading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
   const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<{role: 'user' | 'ai', content: string}[]>([
-    { role: 'ai', content: "Hello! Upload a document to start analyzing your data semantically." }
-  ]);
-  
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [openMenuDocId, setOpenMenuDocId] = useState<string | null>(null);
+  const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
+  const [newDocName, setNewDocName] = useState('');
+  const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
+
+
+
   // Auth state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,10 +62,100 @@ const BetsyDashboard = () => {
     else setDocuments(data || []);
   };
 
+  const createOrLoadConversation = async () => {
+    try {
+      // Try to load the most recent conversation
+      const { data: existingConversations, error: fetchError } = await supabase
+        .from('conversations')
+        .select('id')
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (fetchError) {
+        console.warn('Conversations table not found or error:', fetchError.message);
+        // Table doesn't exist yet, that's okay - chat will work without persistence
+        return null;
+      }
+
+      if (existingConversations && existingConversations.length > 0) {
+        const conversationId = existingConversations[0].id;
+        setCurrentConversationId(conversationId);
+        await loadMessages(conversationId);
+        return conversationId;
+      } else {
+        // Create a new conversation
+        const { data: newConversation, error: createError } = await supabase
+          .from('conversations')
+          .insert({ title: 'New Conversation' })
+          .select()
+          .single();
+
+        if (createError) {
+          console.warn('Could not create conversation:', createError.message);
+          return null;
+        }
+
+        setCurrentConversationId(newConversation.id);
+        return newConversation.id;
+      }
+    } catch (error) {
+      console.warn('Conversation management not available yet:', error);
+      return null;
+    }
+  };
+
+  const loadMessages = async (conversationId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.warn('Could not load messages:', error.message);
+      } else {
+        setMessages(data || []);
+      }
+    } catch (error) {
+      console.warn('Message loading not available:', error);
+    }
+  };
+
+  const saveMessage = async (role: 'user' | 'ai', content: string, conversationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .insert({
+          conversation_id: conversationId,
+          role,
+          content,
+          document_id: selectedDoc?.id || null
+        });
+
+      if (error) {
+        console.warn('Could not save message:', error.message);
+        // Message saving failed but chat still works in-memory
+      }
+
+      // Update conversation's updated_at timestamp
+      await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', conversationId);
+    } catch (error) {
+      console.warn('Message persistence not available:', error);
+      // Chat still works without persistence
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchDocuments();
+      if (session) {
+        fetchDocuments();
+        createOrLoadConversation();
+      }
       setLoading(false);
     });
 
@@ -68,11 +163,28 @@ const BetsyDashboard = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchDocuments();
+      if (session) {
+        fetchDocuments();
+        createOrLoadConversation();
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Close dropdown menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (openMenuDocId) {
+        setOpenMenuDocId(null);
+      }
+    };
+
+    if (openMenuDocId) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openMenuDocId]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,9 +245,23 @@ const BetsyDashboard = () => {
       return;
     }
 
-    // 2. Insert into DB
+    // 2. Insert into DB (Dual Track: files_raw + documents)
     const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
     
+    // Track exact raw file
+    const { error: rawError } = await supabase
+      .from('files_raw')
+      .insert({
+        file_name: file.name,
+        file_url: publicUrl,
+        file_type: fileExt,
+        user_id: session?.user?.id,
+        storage_path: filePath
+      });
+
+    if (rawError) console.error('Error saving to files_raw:', rawError);
+
+    // Track for AI (existing flow)
     const { data: insertedDoc, error: dbError } = await supabase
       .from('documents')
       .insert({
@@ -179,18 +305,41 @@ const BetsyDashboard = () => {
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     
+    // Ensure we have a conversation (optional - chat works without it)
+    let conversationId = currentConversationId;
+    if (!conversationId) {
+      conversationId = await createOrLoadConversation();
+      // If conversation creation fails, that's okay - we'll just not persist
+    }
+
     // Add user message
     const newMsg = { role: 'user' as const, content: chatInput };
     setMessages(prev => [...prev, newMsg]);
     const currentInput = chatInput;
     setChatInput('');
 
+    // Save user message to database (if available)
+    if (conversationId) {
+      await saveMessage('user', currentInput, conversationId);
+    }
+
     // Call API for semantic search
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      console.log('Sending message to API:', currentInput);
+      console.log('Auth token available:', !!session.access_token);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           message: currentInput,
@@ -198,16 +347,160 @@ const BetsyDashboard = () => {
         }),
       });
 
+      console.log('API Response status:', response.status);
+
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to search');
+        console.error('API Error:', response.status, data);
+        throw new Error(data.error || `API Error: ${response.status}`);
       }
 
+      // Add AI response
       setMessages(prev => [...prev, { role: 'ai', content: data.answer }]);
-    } catch (error) {
+
+      // Save AI message to database (if available)
+      if (conversationId) {
+        await saveMessage('ai', data.answer, conversationId);
+      }
+    } catch (error: any) {
       console.error('Search error:', error);
-      setMessages(prev => [...prev, { role: 'ai', content: "Sorry, I encountered an error searching your knowledge base." }]);
+      let errorMsg = "Sorry, I encountered an error searching your knowledge base.";
+
+      // Provide more specific error messages
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+        errorMsg = "Connection error. Please check your internet connection.";
+      } else if (error.message?.includes('401')) {
+        errorMsg = "Authentication error. Please try refreshing the page.";
+      } else if (error.message?.includes('500')) {
+        errorMsg = "Server error. Please try again in a moment.";
+      } else if (error.message) {
+        errorMsg = `Error: ${error.message}`;
+      }
+
+      setMessages(prev => [...prev, { role: 'ai', content: errorMsg }]);
+
+      // Save error message to database too (if available)
+      if (conversationId) {
+        await saveMessage('ai', errorMsg, conversationId);
+      }
+    }
+  };
+
+  const handleDocumentClick = async (doc: Doc) => {
+    setSelectedDoc(doc);
+
+    // Attempt to generate a signed URL for secure access
+    try {
+      // Extract storage path from the public URL
+      // Format is usually: .../storage/v1/object/public/documents/filename.ext
+      const pathParts = doc.file_url.split('/documents/');
+      if (pathParts.length > 1) {
+        // We take the last part in case the string 'documents' appears earlier in the URL
+        const storagePath = decodeURIComponent(pathParts[pathParts.length - 1]);
+
+        // Generate signed URL valid for 1 hour
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(storagePath, 3600);
+
+        if (data?.signedUrl) {
+          // Use the signed URL for preview
+          setPreviewDoc({ ...doc, file_url: data.signedUrl });
+          return;
+        } else if (error) {
+          console.warn('Error generating signed URL:', error);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to generate signed URL:', err);
+    }
+
+    // Fallback if extraction or signing fails
+    setPreviewDoc(doc);
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      // 1. Get the document details first to find the file_url
+      const { data: doc, error: fetchError } = await supabase
+        .from('documents')
+        .select('file_url')
+        .eq('id', docId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // 2. Delete associated chunks/embeddings
+      const { error: chunksError } = await supabase
+        .from('document_chunks')
+        .delete()
+        .eq('document_id', docId);
+
+      if (chunksError) {
+        console.warn('Error deleting chunks:', chunksError);
+        // Continue with deletion even if chunks fail
+      }
+
+      // 3. Delete the file from storage
+      if (doc?.file_url) {
+        // Extract the file path from the public URL
+        const urlParts = doc.file_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+
+        const { error: storageError } = await supabase.storage
+          .from('documents')
+          .remove([fileName]);
+
+        if (storageError) {
+          console.warn('Error deleting file from storage:', storageError);
+          // Continue with deletion even if storage deletion fails
+        }
+      }
+
+      // 4. Delete the document record from database
+      const { error: deleteError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', docId);
+
+      if (deleteError) throw deleteError;
+
+      // If the deleted doc was selected, clear selection
+      if (selectedDoc?.id === docId) {
+        setSelectedDoc(null);
+      }
+
+      // Refresh documents list
+      fetchDocuments();
+      setOpenMenuDocId(null);
+
+      console.log('Document permanently deleted successfully');
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      alert('Failed to delete document. Please try again.');
+    }
+  };
+
+  const handleRenameDocument = async (docId: string) => {
+    if (!newDocName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ filename: newDocName })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      // Refresh documents list
+      fetchDocuments();
+      setRenamingDocId(null);
+      setNewDocName('');
+      setOpenMenuDocId(null);
+    } catch (error) {
+      console.error('Error renaming document:', error);
+      alert('Failed to rename document');
     }
   };
 
@@ -407,26 +700,88 @@ const BetsyDashboard = () => {
               documents.map(doc => (
                 <div 
                   key={doc.id}
-                  onClick={() => setSelectedDoc(doc)}
                   className={cn(
-                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-sm",
+                    "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
                     selectedDoc?.id === doc.id 
                       ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
                       : "hover:bg-white/5 text-slate-400"
                   )}
                 >
-                  {doc.file_type === 'pdf' ? <FileText size={16} /> : <Table size={16} />}
-                  <span className="truncate">{doc.filename}</span>
-                  {selectedDoc?.id === doc.id && (
-                    <div className="ml-auto w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                  )}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div
+                      onClick={() => setSelectedDoc(doc)}
+                      className="flex items-center gap-3 flex-1 cursor-pointer min-w-0 hover:text-indigo-300 transition-colors"
+                      title="Click to select for AI context"
+                    >
+                      {doc.file_type === 'pdf' ? <FileText size={16} /> : <Table size={16} />}
+                      <span className="truncate">{doc.filename}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {selectedDoc?.id === doc.id && (
+                        <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] mx-1" />
+                      )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDocumentClick(doc);
+                        }}
+                        className="p-1.5 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Open File Preview"
+                      >
+                        <Eye size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Three-dot menu button */}
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
+                      }}
+                      className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <MoreVertical size={14} className="text-slate-400" />
+                    </button>
+
+                    {/* Dropdown menu */}
+                    {openMenuDocId === doc.id && (
+                      <div className="absolute right-0 top-8 z-50 w-40 bg-black/95 border border-white/20 rounded-lg shadow-xl backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingDocId(doc.id);
+                            setNewDocName(doc.filename);
+                            setOpenMenuDocId(null);
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                        >
+                          <Edit3 size={12} className="text-indigo-400" />
+                          Rename
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDocument(doc.id);
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/10 bg-white/[0.02]">
+        <div className="p-4 bg-white/[0.02]">
           {/* Secured Badge */}
           <div className="mb-4 flex items-center gap-2 text-[10px] text-green-400/80 font-medium px-2">
             <ShieldCheck size={12} />
@@ -434,40 +789,47 @@ const BetsyDashboard = () => {
           </div>
 
           {/* User Profile Section - Clickable Toggle */}
-          <button 
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="w-full flex items-center gap-3 px-2 py-2 mb-1 rounded-xl hover:bg-white/5 transition-colors text-left group"
-          >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-indigo-500/20 ring-1 ring-white/20">
-              {session?.user?.email?.charAt(0).toUpperCase() || 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate group-hover:text-indigo-300 transition-colors">
-                {session?.user?.user_metadata?.first_name || 'User'}
-              </p>
-              <p className="text-[10px] text-slate-500 truncate">
-                {session?.user?.email}
-              </p>
-            </div>
-            <ChevronRight size={14} className={cn("text-slate-500 transition-transform", isProfileOpen && "rotate-90")} />
-          </button>
 
-          {/* Collapsible Actions */}
-          <div className={cn(
-            "space-y-1 overflow-hidden transition-all duration-300 ease-in-out",
-            isProfileOpen ? "max-h-24 opacity-100 pb-2" : "max-h-0 opacity-0"
-          )}>
-            <button className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all text-xs group pl-12">
-               <Settings size={14} className="group-hover:text-indigo-400 transition-colors" /> 
-               <span>Settings</span>
-            </button>
-            <button 
-              onClick={() => supabase.auth.signOut()}
-              className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs group pl-12"
+          <div className="relative">
+            <button
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="w-full flex items-center gap-3 px-2 py-2 mb-1 rounded-xl hover:bg-white/5 transition-colors text-left group"
             >
-              <LogOut size={14} className="group-hover:text-red-400 transition-colors" /> 
-              <span>Sign Out</span>
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-indigo-500/20 ring-1 ring-white/20">
+                {session?.user?.email?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate group-hover:text-indigo-300 transition-colors">
+                  {session?.user?.user_metadata?.first_name || 'User'}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">
+                  {session?.user?.email}
+                </p>
+              </div>
+              <ChevronRight size={14} className={cn("text-slate-500 transition-transform", isProfileOpen && "rotate-90")} />
             </button>
+
+            {/* Popup Menu */}
+            {isProfileOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setIsProfileOpen(false)}
+                />
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-xl overflow-hidden z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
+                  <div className="p-1 space-y-0.5">
+
+                    <button
+                      onClick={() => supabase.auth.signOut()}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs group"
+                    >
+                      <LogOut size={14} className="group-hover:text-red-400 transition-colors" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </aside>
@@ -482,14 +844,7 @@ const BetsyDashboard = () => {
             <PanelLeft size={16} />
           </button>
         </div>
-        <div className="absolute top-4 right-4 z-50 xl:block hidden">
-          <button
-            onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors border border-white/5"
-          >
-            <PanelRight size={16} />
-          </button>
-        </div>
+
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
           
@@ -517,17 +872,33 @@ const BetsyDashboard = () => {
           {/* Chat Messages */}
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg, idx) => (
-              <div key={idx} className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div
+                key={idx}
+                className={cn(
+                  "flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300",
+                  msg.role === 'user' ? "flex-row-reverse" : "flex-row"
+                )}
+              >
                 <div className={cn(
-                  "w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px]",
+                  "w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold",
                   msg.role === 'ai' ? "bg-indigo-600" : "bg-slate-700"
                 )}>
                   {msg.role === 'ai' ? 'AI' : 'U'}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-slate-300 leading-relaxed">
-                    {msg.content}
-                  </p>
+                <div className={cn(
+                  "space-y-2 max-w-[70%]",
+                  msg.role === 'user' ? "items-end" : "items-start"
+                )}>
+                  <div className={cn(
+                    "px-4 py-3 rounded-2xl",
+                    msg.role === 'ai'
+                      ? "bg-white/5 border border-white/10 text-slate-300"
+                      : "bg-indigo-600 text-white"
+                  )}>
+                    <p className="leading-relaxed text-sm">
+                      {msg.content}
+                    </p>
+                  </div>
                   {msg.role === 'ai' && idx === messages.length - 1 && selectedDoc && (
                     <div className="flex gap-2">
                       <button className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-[11px] hover:bg-white/10 transition-colors flex items-center gap-2">
@@ -586,43 +957,154 @@ const BetsyDashboard = () => {
               <Send size={18} className="text-white" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-slate-600 mt-4 tracking-tight">
-            Betsy uses semantic vector search to ensure accuracy. Privacy is encrypted.
-          </p>
+
         </div>
       </main>
 
-      {/* RIGHT PANE: DATA INSPECTOR */}
-      <section className={cn(
-        "border-l border-white/10 bg-black/40 backdrop-blur-xl hidden xl:block transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
-        isRightSidebarOpen ? "w-80 p-6 opacity-100 translate-x-0" : "w-0 p-0 opacity-0 translate-x-full border-0"
-      )}>
-        <h3 className="text-sm font-semibold mb-6 flex items-center gap-2">
-          <Database size={16} className="text-indigo-400" />
-          Semantic Context
-        </h3>
-        
-        {selectedDoc ? (
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase">Match Score: 0.98</span>
-                <FileText size={12} className="text-slate-500" />
-              </div>
-              <p className="text-xs text-slate-400 italic">
-                &quot;...analysis of {selectedDoc.filename} indicates strong correlation in sector 7G...&quot;
-              </p>
-              <button className="text-[10px] text-indigo-300 hover:underline flex items-center gap-1">
-                Open Page 1 <ChevronRight size={10} />
+      {/* Rename Dialog Modal */}
+      {renamingDocId && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => {
+            setRenamingDocId(null);
+            setNewDocName('');
+          }}
+        >
+          <div
+            className="bg-black/95 border border-white/20 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Rename Document</h3>
+              <button
+                onClick={() => {
+                  setRenamingDocId(null);
+                  setNewDocName('');
+                }}
+                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+              >
+                <X size={18} className="text-slate-400" />
               </button>
             </div>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="docName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                  New Name
+                </label>
+                <input
+                  id="docName"
+                  type="text"
+                  value={newDocName}
+                  onChange={(e) => setNewDocName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleRenameDocument(renamingDocId);
+                    }
+                  }}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                  placeholder="Enter new document name..."
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setRenamingDocId(null);
+                    setNewDocName('');
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRenameDocument(renamingDocId)}
+                  disabled={!newDocName.trim()}
+                  className="px-4 py-2 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="text-xs text-slate-500 italic text-center mt-10">
-            Select a document to view semantic context context match scores.
+        </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <div
+            className="bg-black/95 border border-white/20 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 m-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                {previewDoc.file_type === 'pdf' ? <FileText size={20} className="text-indigo-400" /> : <Table size={20} className="text-emerald-400" />}
+                <h3 className="text-lg font-semibold text-white truncate max-w-md">{previewDoc.filename}</h3>
+              </div>
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 bg-white/5 relative overflow-hidden rounded-b-2xl">
+              {previewDoc.file_type === 'pdf' ? (
+                <iframe
+                  src={previewDoc.file_url}
+                  className="w-full h-full border-0"
+                  title={previewDoc.filename}
+                />
+              ) : (['xlsx', 'xls', 'csv', 'doc', 'docx', 'ppt', 'pptx'].includes((previewDoc.file_type || '').toLowerCase())) ? (
+                <div className="w-full h-full bg-white relative">
+                  <iframe
+                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewDoc.file_url)}`}
+                    className="w-full h-full border-0"
+                    title={previewDoc.filename}
+                    onError={() => console.error("Failed to load Office Viewer")}
+                  />
+                </div>
+              ) : (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes((previewDoc.file_type || '').toLowerCase())) ? (
+                <div className="w-full h-full flex items-center justify-center p-4 bg-black/40">
+                  <img
+                    src={previewDoc.file_url}
+                    alt={previewDoc.filename}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                  />
+                </div>
+              ) : (['txt', 'md', 'json', 'xml', 'js', 'ts', 'jsx', 'tsx', 'css', 'html', 'sql', 'py', 'java', 'c', 'cpp'].includes((previewDoc.file_type || '').toLowerCase())) ? (
+                <div className="w-full h-full bg-white">
+                  <iframe
+                    src={previewDoc.file_url}
+                    className="w-full h-full border-0"
+                    title={previewDoc.filename}
+                  />
+                      </div>
+                    ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4 p-8">
+                  <Table size={48} className="text-slate-600" />
+                  <p>Preview not available for this file type.</p>
+                  <a
+                    href={previewDoc.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-medium"
+                  >
+                    Download File
+                  </a>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
 
     </div>
   );

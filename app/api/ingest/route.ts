@@ -98,8 +98,11 @@ export async function POST(req: NextRequest) {
     text = text.replace(/\s+/g, ' ').trim();
 
     if (!text) {
+      console.error('❌ No text extracted from document');
       return NextResponse.json({ error: 'No text extracted' }, { status: 400 });
     }
+
+    console.log(`✅ Extracted ${text.length} characters from document`);
 
     // 3. Chunk text (simple sliding window or paragraph spliter)
     // Let's use 1000 char chunks with 200 overlap
@@ -111,9 +114,10 @@ export async function POST(req: NextRequest) {
       chunks.push(text.substring(i, i + chunkSize));
     }
 
-    console.log(`Generated ${chunks.length} chunks.`);
+    console.log(`📦 Generated ${chunks.length} chunks from document`);
 
     // 4. Embed and store chunks
+    let successCount = 0;
     const insertPromises = chunks.map(async (chunk, index) => {
       try {
         const embeddingResponse = await openai.embeddings.create({
@@ -122,20 +126,30 @@ export async function POST(req: NextRequest) {
         });
         const embedding = embeddingResponse.data[0].embedding;
 
-        return supabase.from('document_chunks').insert({
+        const result = await supabase.from('document_chunks').insert({
           document_id: documentId,
           content: chunk,
           embedding
         });
+
+        if (!result.error) {
+          successCount++;
+          if ((index + 1) % 10 === 0) {
+            console.log(`   Processed ${index + 1}/${chunks.length} chunks...`);
+          }
+        }
+
+        return result;
       } catch (e) {
-        console.error(`Error embedding chunk ${index}:`, e);
+        console.error(`❌ Error embedding chunk ${index}:`, e);
         return null;
       }
     });
 
     await Promise.all(insertPromises);
+    console.log(`✅ Successfully stored ${successCount}/${chunks.length} chunks in database`);
 
-    return NextResponse.json({ success: true, chunks: chunks.length });
+    return NextResponse.json({ success: true, chunks: chunks.length, stored: successCount });
 
   } catch (err: any) {
     console.error('Ingest API error:', err);

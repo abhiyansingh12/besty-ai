@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { SplineSceneBasic } from "@/components/ui/spline-scene-basic";
-import { ArrowRight, Sparkles } from 'lucide-react'; 
+import { ArrowRight } from 'lucide-react'; 
 
 export default function LandingPage() {
   return (
@@ -57,10 +57,7 @@ export default function LandingPage() {
                         Launch Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                       </span>
                     </Link>
-                    <button className="px-8 h-12 rounded-xl border border-white/10 hover:bg-white/5 transition-colors text-slate-300 font-medium flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-400" />
-                      See How It Works
-                    </button>
+
                   </div>
                 </div>
               }
@@ -69,15 +66,15 @@ export default function LandingPage() {
             />
           </div>
 
-          {/* Social Proof / Trust Badge */}
-          <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
-            <p>Trusted by forward-thinking data teams</p>
-            <div className="flex gap-8 grayscale opacity-50">
-               {/* Placeholders for logos (just text for now to keep it simple but functional) */}
-               <span className="font-semibold">ACME Corp</span>
-               <span className="font-semibold">GlobalBank</span>
-               <span className="font-semibold">Stark Industries</span>
-               <span className="font-semibold">Wayne Ent</span>
+          {/* Footer */}
+          <div className="mt-24 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
+            <div className="flex items-center gap-4">
+              <p className="font-bold text-slate-300">Betsy AI</p>
+              <span className="text-slate-600 text-xs border-l border-white/10 pl-4">&copy; 2026 All rights reserved.</span>
+            </div>
+            <div className="flex gap-6">
+              <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
             </div>
           </div>
 
