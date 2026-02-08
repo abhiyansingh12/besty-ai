@@ -790,7 +790,8 @@ const BetsyDashboard = () => {
                     "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
                     activeDoc?.id === doc.id
                       ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
-                      : "hover:bg-white/5 text-slate-400"
+                      : "hover:bg-white/5 text-slate-400",
+                    openMenuDocId === doc.id && "z-20 bg-white/5 ring-1 ring-white/10"
                   )}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
