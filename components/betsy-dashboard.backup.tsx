@@ -22,16 +22,26 @@ interface Doc {
   user_id: string;
 }
 
+// Type for conversations (ChatGPT-style)
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+}
+
 const BetsyDashboard = () => {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [documents, setDocuments] = useState<Doc[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [activeDoc, setActiveDoc] = useState<Doc | null>(null);
-  const [conversations, setConversations] = useState<Record<string, { role: 'user' | 'ai', content: string }[]>>({});
+  const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
   const [chatInput, setChatInput] = useState('');
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [openMenuDocId, setOpenMenuDocId] = useState<string | null>(null);
   const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
@@ -62,40 +72,35 @@ const BetsyDashboard = () => {
     else setDocuments(data || []);
   };
 
-  const createOrLoadConversation = async (title?: string) => {
+  const createOrLoadConversation = async () => {
     try {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       const userId = currentSession?.user?.id;
 
-      // If a title is provided (e.g. for a document), always create NEW conversation
-      // Otherwise try to load most recent generic one
-      let existingConversations = null;
+      // Try to load the most recent conversation
+      const { data: existingConversations, error: fetchError } = await supabase
+        .from('conversations')
+        .select('id')
+        .order('updated_at', { ascending: false })
+        .limit(1);
 
-      if (!title) {
-        const { data, error } = await supabase
-          .from('conversations')
-          .select('id')
-          .order('updated_at', { ascending: false })
-          .limit(1);
-        existingConversations = data;
+      if (fetchError) {
+        console.warn('Conversations table not found or error:', fetchError.message);
+        // Table doesn't exist yet, that's okay - chat will work without persistence
+        return null;
       }
 
       if (existingConversations && existingConversations.length > 0) {
         const conversationId = existingConversations[0].id;
         setCurrentConversationId(conversationId);
-        if (activeDoc) {
-          // If we have an active doc, load its messages specifically
-          await loadMessages(activeDoc.id);
-        } else {
-          await loadMessages(null);
-        }
+        await loadMessages(conversationId);
         return conversationId;
       } else {
         // Create a new conversation
         const { data: newConversation, error: createError } = await supabase
           .from('conversations')
           .insert({
-            title: title || 'New Conversation',
+            title: 'New Conversation',
             user_id: userId
           })
           .select()
@@ -115,29 +120,18 @@ const BetsyDashboard = () => {
     }
   };
 
-  const loadMessages = async (docId: string | null) => {
+  const loadMessages = async (conversationId: string) => {
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
-
-      if (docId) {
-        query = query.eq('document_id', docId);
-      } else {
-        query = query.is('document_id', null);
-      }
-
-      const { data, error } = await query;
 
       if (error) {
         console.warn('Could not load messages:', error.message);
       } else {
-        const key = docId || 'global';
-        setConversations(prev => ({
-          ...prev,
-          [key]: data || []
-        }));
+        setMessages(data || []);
       }
     } catch (error) {
       console.warn('Message loading not available:', error);
@@ -152,7 +146,7 @@ const BetsyDashboard = () => {
           conversation_id: conversationId,
           role,
           content,
-          document_id: activeDoc?.id || null
+          document_id: selectedDoc?.id || null
         });
 
       if (error) {
@@ -331,20 +325,13 @@ const BetsyDashboard = () => {
     // Ensure we have a conversation (optional - chat works without it)
     let conversationId = currentConversationId;
     if (!conversationId) {
-      // If we are chatting with a document selected, create a dedicated conversation for it
-      const title = activeDoc ? `Chat about ${activeDoc.filename}` : undefined;
-      conversationId = await createOrLoadConversation(title);
+      conversationId = await createOrLoadConversation();
+      // If conversation creation fails, that's okay - we'll just not persist
     }
 
     // Add user message
     const newMsg = { role: 'user' as const, content: chatInput };
-    const docKey = activeDoc?.id || 'global';
-
-    setConversations(prev => ({
-      ...prev,
-      [docKey]: [...(prev[docKey] || []), newMsg]
-    }));
-
+    setMessages(prev => [...prev, newMsg]);
     const currentInput = chatInput;
     setChatInput('');
 
@@ -373,7 +360,7 @@ const BetsyDashboard = () => {
         },
         body: JSON.stringify({
           message: currentInput,
-          documentId: activeDoc?.id || undefined, // Search all if undefined
+          documentId: selectedDoc?.id || undefined, // Search all if undefined
         }),
       });
 
@@ -387,10 +374,7 @@ const BetsyDashboard = () => {
       }
 
       // Add AI response
-      setConversations(prev => ({
-        ...prev,
-        [docKey]: [...(prev[docKey] || []), { role: 'ai', content: data.answer }]
-      }));
+      setMessages(prev => [...prev, { role: 'ai', content: data.answer }]);
 
       // Save AI message to database (if available)
       if (conversationId) {
@@ -411,10 +395,7 @@ const BetsyDashboard = () => {
         errorMsg = `Error: ${error.message}`;
       }
 
-      setConversations(prev => ({
-        ...prev,
-        [docKey]: [...(prev[docKey] || []), { role: 'ai', content: errorMsg }]
-      }));
+      setMessages(prev => [...prev, { role: 'ai', content: errorMsg }]);
 
       // Save error message to database too (if available)
       if (conversationId) {
@@ -424,27 +405,8 @@ const BetsyDashboard = () => {
   };
 
   const handleDocumentClick = async (doc: Doc) => {
-    setActiveDoc(doc);
+    setSelectedDoc(doc);
 
-    // 1. Initialize conversation for this doc if not present
-    const docId = doc.id;
-    if (!conversations[docId]) {
-      // Load from DB
-      await loadMessages(docId);
-      // Also ensure we have a conversation ID for persistence
-      const title = `Chat about ${doc.filename}`;
-      await createOrLoadConversation(title);
-    } else {
-      // Just ensure conversation ID is ready for new messages
-      const title = `Chat about ${doc.filename}`;
-      // update currentConversationId without reloading messages
-      createOrLoadConversation(title).then(id => {
-        if (id) setCurrentConversationId(id);
-      });
-    }
-  };
-
-  const handlePreviewDocument = async (doc: Doc) => {
     // Attempt to generate a signed URL for secure access
     try {
       // Extract storage path from the public URL
@@ -486,17 +448,6 @@ const BetsyDashboard = () => {
 
       if (fetchError) throw fetchError;
 
-      // 1.5. Delete associated chat messages (Clean up chat history for this doc)
-      const { error: chatError } = await supabase
-        .from('chat_messages')
-        .delete()
-        .eq('document_id', docId);
-
-      if (chatError) {
-        console.warn('Error deleting chat messages:', chatError);
-        // Continue with deletion even if chat deletion fails
-      }
-
       // 2. Delete associated chunks/embeddings
       const { error: chunksError } = await supabase
         .from('document_chunks')
@@ -532,11 +483,9 @@ const BetsyDashboard = () => {
 
       if (deleteError) throw deleteError;
 
-      // If the deleted doc was selected, clear selection and chat
-      if (activeDoc?.id === docId) {
-        setActiveDoc(null);
-        // setMessages([]); // No need to clear, just switching activeDoc clears view
-        setCurrentConversationId(null);
+      // If the deleted doc was selected, clear selection
+      if (selectedDoc?.id === docId) {
+        setSelectedDoc(null);
       }
 
       // Refresh documents list
@@ -554,33 +503,12 @@ const BetsyDashboard = () => {
     if (!newDocName.trim()) return;
 
     try {
-      // 1. Get old filename first to find the conversation
-      const { data: oldDoc } = await supabase
-        .from('documents')
-        .select('filename')
-        .eq('id', docId)
-        .single();
-
-      const oldFilename = oldDoc?.filename;
-
-      // 2. Update document filename
       const { error } = await supabase
         .from('documents')
         .update({ filename: newDocName })
         .eq('id', docId);
 
       if (error) throw error;
-
-      // 3. Update associated conversation title (maintain the link)
-      if (oldFilename) {
-        const oldTitle = `Chat about ${oldFilename}`;
-        const newTitle = `Chat about ${newDocName}`;
-
-        await supabase
-          .from('conversations')
-          .update({ title: newTitle })
-          .eq('title', oldTitle);
-      }
 
       // Refresh documents list
       fetchDocuments();
@@ -791,14 +719,14 @@ const BetsyDashboard = () => {
                   key={doc.id}
                   className={cn(
                     "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
-                    activeDoc?.id === doc.id
+                    selectedDoc?.id === doc.id
                       ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
                       : "hover:bg-white/5 text-slate-400"
                   )}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <div
-                      onClick={() => handleDocumentClick(doc)}
+                      onClick={() => setSelectedDoc(doc)}
                       className="flex items-center gap-3 flex-1 cursor-pointer min-w-0 hover:text-indigo-300 transition-colors"
                       title="Click to select for AI context"
                     >
@@ -807,14 +735,14 @@ const BetsyDashboard = () => {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {activeDoc?.id === doc.id && (
+                      {selectedDoc?.id === doc.id && (
                         <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] mx-1" />
                       )}
 
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handlePreviewDocument(doc);
+                          handleDocumentClick(doc);
                         }}
                         className="p-1.5 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                         title="Open File Preview"
@@ -950,8 +878,8 @@ const BetsyDashboard = () => {
               }
               description={
                 <p className="mt-2 text-slate-400 text-sm max-w-md">
-                  {activeDoc
-                    ? `Analyzing context from ${activeDoc.filename}...`
+                  {selectedDoc
+                    ? `Analyzing context from ${selectedDoc.filename}...`
                     : "Ask questions about your uploaded documents."}
                 </p>
               }
@@ -960,7 +888,7 @@ const BetsyDashboard = () => {
 
           {/* Chat Messages */}
           <div className="max-w-3xl mx-auto space-y-4">
-            {(conversations[activeDoc?.id || 'global'] || []).map((msg, idx) => (
+            {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={cn(
@@ -988,7 +916,7 @@ const BetsyDashboard = () => {
                       {msg.content}
                     </p>
                   </div>
-                  {msg.role === 'ai' && idx === (conversations[activeDoc?.id || 'global'] || []).length - 1 && activeDoc && (
+                  {msg.role === 'ai' && idx === messages.length - 1 && selectedDoc && (
                     <div className="flex gap-2">
                       <button className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-[11px] hover:bg-white/10 transition-colors flex items-center gap-2">
                         <Search size={12} /> View Source Chunks
@@ -1020,7 +948,7 @@ const BetsyDashboard = () => {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder={activeDoc ? `Ask about ${activeDoc.filename}...` : "Ask anything about your knowledge base..."}
+              placeholder={selectedDoc ? `Ask about ${selectedDoc.filename}...` : "Ask anything about your knowledge base..."}
               className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 pr-14 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             />
 

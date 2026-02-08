@@ -1,10 +1,12 @@
 
+
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+
+// Note: Excel/CSV processing is now handled by the Python Pandas service
+// PDF parsing still uses pdf-parse for unstructured data route
 const pdfParse = require('pdf-parse');
-import { parse as csvParse } from 'csv-parse/sync';
-import * as XLSX from 'xlsx';
 
 // Helper to check key
 if (!process.env.OPENAI_API_KEY) {

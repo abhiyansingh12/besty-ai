@@ -3,13 +3,19 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
+// Use require for pdf-parse to avoid type issues if not fully typed
+const pdfParse = require('pdf-parse');
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Pandas Calculator Service URL (can be overridden via env)
+const PANDAS_SERVICE_URL = process.env.PANDAS_SERVICE_URL || 'http://localhost:5001';
+
 export async function POST(req: NextRequest) {
   try {
-    const { message, documentId, conversationId } = await req.json();
+    const { message, documentId } = await req.json();
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -35,6 +41,9 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${token}`,
         },
       },
+      auth: {
+        persistSession: false
+      }
     });
 
     // Verify user is authenticated
@@ -47,118 +56,366 @@ export async function POST(req: NextRequest) {
     console.log('✅ User authenticated:', user.email);
     console.log('🔍 Query:', message);
 
-    // -------------------------------------------------------------------------
-    // ASSISTANTS API FLOW
-    // -------------------------------------------------------------------------
-
-    // 1. Get or Create Assistant
-    let assistantId = process.env.OPENAI_ASSISTANT_ID;
-
-    if (!assistantId) {
-      // Create a temporary one if environment variable is missing
-      // NOTE: This will create a new assistant every restart if not saved in .env
-      console.log('⚠️ No OPENAI_ASSISTANT_ID found. Creating a transient assistant...');
-      const assistant = await openai.beta.assistants.create({
-        name: "Betsy Data Analyst",
-        instructions: "You are an expert Data Analyst. You answer questions based on the attached files. Use the file_search tool to find information.",
-        model: "gpt-4o",
-        tools: [{ type: "file_search" }],
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({
+        answer: "Please add your OPENAI_API_KEY to .env to enable semantic search."
       });
-      assistantId = assistant.id;
-      console.log(`✅ Created Assistant: ${assistantId}`);
     }
 
-    // 2. Handle Conversation / Thread
-    let threadId = '';
+    // --- 1. DATA PREPARATION ---
+    let isStructuredData = false;
+    let pandasLoaded = false;
+    let dataframeStats: any = null;
+    let fileContext = '';
 
-    // If we have a conversationId, try to find the thread
-    if (conversationId) {
-      const { data: conv } = await supabase.from('conversations')
-        .select('openai_thread_id')
-        .eq('id', conversationId)
-        .single();
-
-      if (conv?.openai_thread_id) {
-        threadId = conv.openai_thread_id;
-        console.log(`🧵 Resuming Thread: ${threadId}`);
-      }
-    }
-
-    if (!threadId) {
-      // Create new Thread
-      const thread = await openai.beta.threads.create();
-      threadId = thread.id;
-      console.log(`🧵 Created New Thread: ${threadId}`);
-
-      // If conversationId exists, update it. If not, the frontend might create one later.
-      if (conversationId) {
-        await supabase.from('conversations')
-          .update({ openai_thread_id: threadId } as any)
-          .eq('id', conversationId);
-      }
-    }
-
-    // 3. Prepare Message Attachments
-    const attachments: any[] = [];
-
+    // Check if we have a specific document to work with
     if (documentId) {
-      // Fetch OpenAI File ID
-      const { data: doc } = await supabase.from('documents')
-        .select('openai_file_id')
-        .eq('id', documentId)
-        .single();
+      const { data: doc } = await supabase.from('documents').select('*').eq('id', documentId).single();
 
-      if (doc?.openai_file_id) {
-        console.log(`📎 Attaching File: ${doc.openai_file_id}`);
-        attachments.push({
-          file_id: doc.openai_file_id,
-          tools: [{ type: "file_search" }]
-        });
-      } else {
-        console.warn(`⚠️ Document ${documentId} selected but has no openai_file_id. Was it ingested with the new flow?`);
+      if (doc) {
+        console.log(`📂 Processing Document: ${doc.filename} (${doc.file_type})`);
+
+        let storagePath = doc.storage_path;
+        if (!storagePath && doc.file_url) {
+          const urlParts = doc.file_url.split('/documents/');
+          if (urlParts.length > 1) {
+            storagePath = decodeURIComponent(urlParts[urlParts.length - 1]);
+          }
+        }
+
+        if (storagePath) {
+          // Download file
+          const { data: fileBlob, error: downloadError } = await supabase.storage
+            .from('documents')
+            .download(storagePath);
+
+          if (!downloadError && fileBlob) {
+            const buffer = Buffer.from(await fileBlob.arrayBuffer());
+            const lowerExt = (doc.file_type || '').toLowerCase();
+
+            // ===== STRUCTURED DATA HANDLING (Excel / CSV) → PANDAS =====
+            if (['xlsx', 'xls', 'csv'].includes(lowerExt)) {
+              console.log('📊 Loading into Pandas DataFrame (Source of Truth)...');
+              try {
+                // Convert buffer to base64 for Python service
+                const base64Content = buffer.toString('base64');
+
+                // Send to Pandas service
+                const loadResponse = await fetch(`${PANDAS_SERVICE_URL}/load-dataframe`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    document_id: documentId,
+                    file_content: base64Content,
+                    file_type: lowerExt
+                  })
+                });
+
+                if (!loadResponse.ok) {
+                  throw new Error(`Pandas service error: ${loadResponse.statusText}`);
+                }
+
+                const loadResult = await loadResponse.json();
+
+                if (loadResult.success) {
+                  isStructuredData = true;
+                  pandasLoaded = true;
+                  dataframeStats = {
+                    rows: loadResult.rows,
+                    columns: loadResult.columns,
+                    schema: loadResult.schema,
+                    sample_data: loadResult.sample_data
+                  };
+                  console.log(`✅ DataFrame loaded: ${loadResult.rows} rows, ${loadResult.columns.length} columns`);
+                }
+              } catch (e) {
+                console.error('Failed to load into Pandas, falling back to text:', e);
+              }
+            }
+
+            // ===== UNSTRUCTURED FALLBACK (PDF / Text) → VECTOR DB =====
+            if (!isStructuredData) {
+              if (lowerExt === 'pdf') {
+                try {
+                  const pdfData = await pdfParse(buffer);
+                  fileContext = pdfData.text;
+                } catch (e) { console.error(e); }
+              } else {
+                // Try to read as text
+                try {
+                  fileContext = new TextDecoder().decode(buffer);
+                } catch (e) { console.error(e); }
+              }
+              // Truncate if too huge
+              if (fileContext.length > 100000) {
+                console.warn('⚠️ File too large, truncating context.');
+                fileContext = fileContext.substring(0, 100000);
+              }
+            }
+          }
+        }
       }
     }
 
-    // 4. Add Message to Thread
-    await openai.beta.threads.messages.create(
-      threadId,
-      {
-        role: "user",
-        content: message,
-        attachments: attachments.length > 0 ? attachments : undefined
-      }
-    );
+    // --- 2. ROUTE A: PANDAS DATAFRAME ENGINE (ChatGPT-like Excel/CSV) ---
+    if (isStructuredData && pandasLoaded && dataframeStats) {
+      console.log('🚀 Using Pandas Calculator (Source of Truth)');
 
-    // 5. Run Assistant
-    console.log('🏃‍♂️ Running Assistant...');
+      const { rows: totalRows, columns, schema, sample_data } = dataframeStats;
 
-    const run = await openai.beta.threads.runs.createAndPoll(
-      threadId,
-      {
-        assistant_id: assistantId,
-      }
-    );
+      // Build column information for LLM
+      const columnInfo = schema.map((col: any) =>
+        `  - **${col.column}**: ${col.dtype} (${col.unique_count} unique values, ${col.null_count} nulls)`
+      ).join('\n');
 
-    if (run.status === 'completed') {
-      const messages = await openai.beta.threads.messages.list(
-        run.thread_id
+      // Sample data preview for LLM context
+      const sampleRows = sample_data.slice(0, 10)
+        .map((row: any, idx: number) => `Row ${idx + 1}: ${JSON.stringify(row)}`)
+        .join('\n');
+
+      // STEP 1: Ask GPT-4o to generate Pandas code with STRICT instructions
+
+      // Identify likely "total" or "sales" columns
+      const totalColumns = columns.filter((col: string) =>
+        /total|sales|amount|price|sum|revenue/i.test(col)
       );
 
-      // Get the last message which (should be) from the assistant
-      const lastMessage = messages.data.find(m => m.role === 'assistant');
+      const codeGenPrompt = `You are a Python/Pandas code generator. Generate EXACT, DETERMINISTIC code.
 
-      let answer = "No response generated.";
-      if (lastMessage && lastMessage.content[0].type === 'text') {
-        answer = lastMessage.content[0].text.value;
+## DATASET SCHEMA:
+Total Rows: ${totalRows}
+${schema.map((col: any) => `Column "${col.column}": ${col.dtype} | ${col.unique_count} unique values | Sample: ${JSON.stringify(col.sample_values)}`).join('\n')}
+
+${totalColumns.length > 0 ? `## IMPORTANT - LIKELY COLUMNS FOR TOTALS/SUMS:
+${totalColumns.map((c: string) => `- "${c}"`).join('\n')}
+⚠️ When user asks for "total sales", use ONE of these columns above, NOT all numeric columns!\n` : ''}
+## SAMPLE DATA (First 10 rows):
+${JSON.stringify(sample_data.slice(0, 10), null, 2)}
+
+## USER QUERY:
+"${message}"
+
+## CODE GENERATION RULES (FOLLOW EXACTLY):
+1. DataFrame variable is: \`df\`
+2. Final result MUST be stored in variable: \`result\`
+3. Available columns ONLY: ${columns.map((c: string) => `"${c}"`).join(', ')}
+4. For text filtering, use CASE-INSENSITIVE matching:
+   - Use: df[df['ColumnName'].str.contains('value', case=False, na=False)]
+   - For exact: df[df['ColumnName'].str.upper() == 'VALUE']
+5. For counting rows: len(df) or df.shape[0]
+6. For summing: df['ColumnName'].sum()
+7. For grouping: df.groupby('Col')['ValueCol'].sum()
+8. NO print statements, NO comments, NO explanations
+9. Output ONLY valid Python code
+
+## CRITICAL - COLUMN SELECTION FOR TOTALS/SUMS:
+⚠️ When asked for "total sales" or similar:
+- ONLY sum ONE specific column (usually the column with "total", "sales", "amount", or "price" in its name)
+- DO NOT sum across multiple columns (JAN, FEB, MAR, etc.)
+- DO NOT use .sum().sum() (this sums everything twice)
+- Pattern: filtered_df['SPECIFIC_COLUMN_NAME'].sum()
+
+## EXAMPLES:
+Query: "How many rows for Tennessee?"
+Code: result = len(df[df['State'].str.contains('Tennessee', case=False, na=False)])
+
+Query: "Total sales for Tennessee"
+Code: result = df[df['State'].str.contains('Tennessee', case=False, na=False)]['Total Price'].sum()
+
+Query: "Tennessee total sales"
+Code: result = df[df['SALES REP'].str.contains('Tennessee', case=False, na=False)]['TTL SALES'].sum()
+
+Query: "Count rows and sum sales for Tennessee"
+Code: filtered = df[df['State'].str.contains('Tennessee', case=False, na=False)]
+result = {'row_count': len(filtered), 'total_sales': filtered['Total Price'].sum()}
+
+Query: "Find Tennessee columns and total"
+Code: result = df[df['SALES REP'].str.contains('Tennessee', case=False, na=False)]['TTL SALES'].sum()
+
+NOW GENERATE CODE FOR THE USER QUERY (CODE ONLY, NO MARKDOWN):`;
+
+      console.log('🎯 Generating deterministic Pandas code...');
+
+      const codeResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: codeGenPrompt }],
+        temperature: 0,
+        seed: 12345, // Fixed seed for deterministic results
+      });
+
+      let pandasCode = codeResponse.choices[0].message.content?.trim() || '';
+
+      // Clean up code (remove markdown blocks)
+      pandasCode = pandasCode.replace(/```python\n?/g, '').replace(/```\n?/g, '').trim();
+
+      console.log('� Generated Pandas Code:\n', pandasCode);
+
+      try {
+        // Security check
+        const forbiddenKeywords = /import os|import sys|import subprocess|exec\(|eval\(|__import__|open\(/i;
+        if (forbiddenKeywords.test(pandasCode)) {
+          throw new Error("Security Alert: Forbidden operations detected in generated code.");
+        }
+
+        // STEP 2: Execute Pandas code via Python service (THE CALCULATOR)
+        const executeResponse = await fetch(`${PANDAS_SERVICE_URL}/query-natural`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document_id: documentId,
+            pandas_code: pandasCode
+          })
+        });
+
+        if (!executeResponse.ok) {
+          throw new Error(`Pandas execution failed: ${executeResponse.statusText}`);
+        }
+
+        const executionResult = await executeResponse.json();
+
+        if (!executionResult.success) {
+          throw new Error(executionResult.error || 'Unknown execution error');
+        }
+
+        console.log('✅ Pandas Result:', JSON.stringify(executionResult.result));
+
+        // STEP 3: Ask GPT-4o to explain results (THE INTERPRETER - NOT Calculator)
+        const explanationPrompt = `You are explaining PRE-COMPUTED results from a Pandas analysis.
+
+## USER'S ORIGINAL QUESTION:
+"${message}"
+
+## PANDAS CODE THAT WAS EXECUTED:
+\`\`\`python
+${pandasCode}
+\`\`\`
+
+## COMPUTED RESULT (SOURCE OF TRUTH):
+\`\`\`json
+${JSON.stringify(executionResult.result, null, 2)}
+\`\`\`
+
+## Dataset Context:
+- Total rows in dataset: ${totalRows}
+- Available columns: ${columns.join(', ')}
+
+## YOUR TASK:
+Present these EXACT results in a clear, professional manner. DO NOT recalculate or estimate anything.
+
+**CRITICAL RULES**:
+1. Use ONLY the numbers from "COMPUTED RESULT" above - these are the SOURCE OF TRUTH
+2. DO NOT perform any calculations yourself
+3. DO NOT modify, round, or estimate the numbers
+4. Present the data as-is in a clear format
+
+**FORMAT**:
+- Start naturally: "Based on your data, here are the results:"
+- Use bullet points with **bold labels**
+- Show the EXACT numbers from the result
+- Add brief context if helpful
+- Keep it concise and scannable
+
+Provide your explanation now (use ONLY the exact numbers from the result):`;
+
+        const explanationResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: explanationPrompt }],
+          temperature: 0.1,
+          seed: 12345, // Consistency
+        });
+
+        return NextResponse.json({
+          answer: explanationResponse.choices[0].message.content,
+          chunks: [{
+            content: `Python Code:\n${pandasCode}\n\nResult:\n${JSON.stringify(executionResult.result, null, 2)}`
+          }],
+          metadata: {
+            execution_method: 'pandas',
+            code_executed: pandasCode
+          }
+        });
+
+      } catch (error: any) {
+        console.error('❌ Pandas Execution Error:', error);
+
+        // Fallback: Ask GPT-4o to analyze manually
+        const fallbackPrompt = `The automated analysis failed. Please analyze this dataset manually:
+
+**Dataset**: ${totalRows} rows with columns: ${columns.join(', ')}
+
+**Column Details**:
+${columnInfo}
+
+**Sample data (first 10 rows)**:
+${sampleRows}
+
+**Question**: ${message}
+
+Provide your best analysis based on the information available.`;
+
+        const fallbackResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: fallbackPrompt }],
+          temperature: 0.1,
+        });
+
+        return NextResponse.json({
+          answer: fallbackResponse.choices[0].message.content,
+          metadata: {
+            execution_method: 'fallback',
+            error: error.message
+          }
+        });
       }
-
-      console.log('✅ Assistant responded.');
-      return NextResponse.json({ answer, threadId });
-
-    } else {
-      console.error('❌ Run status:', run.status);
-      return NextResponse.json({ error: `Assistant run failed with status: ${run.status}` }, { status: 500 });
     }
+
+    // --- 3. ROUTE B: UNSTRUCTURED / RAG (Default) ---
+    console.log('📚 Using Semantic Search Route');
+
+    let context = fileContext || '';
+    let chunks: any[] = [];
+
+    // If we don't have full file context in memory, fetch chunks via Vector Search
+    if (!context) {
+      console.log('🔍 Vector Searching...');
+      const embeddingResponse = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: message,
+      });
+      const embedding = embeddingResponse.data[0].embedding;
+
+      const { data: searchResults, error } = await supabase.rpc('match_documents', {
+        query_embedding: embedding,
+        match_threshold: 0.1,
+        match_count: 5,
+        filter_document_id: documentId,
+      });
+
+      if (searchResults) {
+        chunks = searchResults;
+        context = chunks.map((c: any) => c.content).join('\n\n');
+      }
+    }
+
+    const systemPrompt = `You are a helpful AI Assistant.
+    Use the provided context to answer the user's question clearly.
+    If the answer is not in the context, say so.
+    
+    CONTEXT:
+    ${context}`;
+
+    const chatResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+    });
+
+    return NextResponse.json({
+      answer: chatResponse.choices[0].message.content,
+      chunks
+    });
 
   } catch (err: any) {
     console.error('Error in chat API:', err);

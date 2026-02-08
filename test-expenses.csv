@@ -1,0 +1,25 @@
+State,Category,Amount,Month
+California,Sales,125000,January
+California,Marketing,45000,January
+California,Operations,32000,January
+Texas,Sales,98000,January
+Texas,Marketing,28000,January
+Texas,Operations,21000,January
+Tennessee,Sales,67000,January
+Tennessee,Marketing,18000,January
+Tennessee,Operations,15000,January
+New York,Sales,145000,January
+New York,Marketing,52000,January
+New York,Operations,38000,January
+California,Sales,132000,February
+California,Marketing,47000,February
+California,Operations,34000,February
+Texas,Sales,103000,February
+Texas,Marketing,31000,February
+Texas,Operations,23000,February
+Tennessee,Sales,72000,February
+Tennessee,Marketing,21000,February
+Tennessee,Operations,17000,February
+New York,Sales,152000,February
+New York,Marketing,55000,February
+New York,Operations,41000,February
