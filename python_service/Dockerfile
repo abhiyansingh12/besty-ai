@@ -13,4 +13,4 @@ COPY app.py .
 EXPOSE 5001
 
 # Run the service
-CMD ["python", "app.py"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5001} app:app"]
