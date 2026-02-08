@@ -33,8 +33,8 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="flex-1 flex flex-col pt-24 md:pt-32 pb-20 px-6">
-        <div className="container mx-auto max-w-6xl space-y-12">
+      <section className="flex-1 flex flex-col pt-16 md:pt-32 pb-8 md:pb-20 px-6">
+        <div className="container mx-auto max-w-6xl space-y-6 md:space-y-12">
           
           {/* Reusing the Spline Scene with Custom Landing Copy */}
           <div className="w-full">
@@ -67,7 +67,7 @@ export default function LandingPage() {
           </div>
 
           {/* Footer */}
-          <div className="mt-24 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
+          <div className="mt-8 md:mt-24 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
             <div className="flex items-center gap-4">
               <p className="font-bold text-slate-300">Betsy AI</p>
               <span className="text-slate-600 text-xs border-l border-white/10 pl-4">&copy; 2026 All rights reserved.</span>
