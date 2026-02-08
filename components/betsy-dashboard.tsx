@@ -212,16 +212,21 @@ const BetsyDashboard = () => {
   }, []);
 
   // Close dropdown menu when clicking outside
+  // Close dropdown menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (openMenuDocId) {
-        setOpenMenuDocId(null);
-      }
+      // Don't close if clicking the menu itself (though stopPropagation in button handles most)
+      // The button needs to be excluded if not stopPropagated, but since we use stopProp, this is fine.
+      setOpenMenuDocId(null);
     };
 
     if (openMenuDocId) {
       document.addEventListener('click', handleClickOutside);
     }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   }, [openMenuDocId]);
 
   // Parse CSV for preview
