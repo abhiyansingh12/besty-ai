@@ -19,6 +19,8 @@ CORS(app)
 
 # In-memory DataFrame cache (keyed by document_id)
 dataframe_cache: Dict[str, pd.DataFrame] = {}
+# In-memory Summary cache (keyed by document_id)
+
 
 
 @app.route('/health', methods=['GET'])
@@ -51,10 +53,13 @@ def load_dataframe():
         # Decode base64 content
         file_bytes = base64.b64decode(file_content_b64)
         
+        extracted_summary = None
+
         # Load into Pandas DataFrame based on file type
         if file_type == 'csv':
             df = pd.read_csv(io.BytesIO(file_bytes))
         elif file_type in ['xlsx', 'xls']:
+            # Standard load without extraction logic
             df = pd.read_excel(io.BytesIO(file_bytes))
         else:
             return jsonify({"error": f"Unsupported file type: {file_type}"}), 400
@@ -74,7 +79,8 @@ def load_dataframe():
             "rows": len(df),
             "columns": list(df.columns),
             "schema": schema,
-            "sample_data": sample_df.to_dict('records')
+            "sample_data": sample_df.to_dict('records'),
+            "extracted_summary": extracted_summary
         })
         
     except Exception as e:
@@ -232,6 +238,9 @@ def describe_dataframe():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
 
 
 def get_dataframe_schema(df: pd.DataFrame) -> List[Dict[str, Any]]:

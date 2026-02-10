@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText, Table, Search,
   UploadCloud, Send, ChevronRight, Loader2,
-  PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye
+  PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye, Check,
+  Folder, FolderPlus, ArrowLeft, Lock
 } from 'lucide-react';
 import { SplineSceneBasic } from "@/components/ui/spline-scene-basic";
 import { supabase } from '@/lib/supabase';
@@ -25,6 +26,14 @@ interface Doc {
   user_id: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  user_id: string;
+  created_at: string;
+}
+
 const BetsyDashboard = () => {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -33,7 +42,7 @@ const BetsyDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [activeDoc, setActiveDoc] = useState<Doc | null>(null);
-  const [conversations, setConversations] = useState<Record<string, { role: 'user' | 'ai', content: string }[]>>({});
+  const [messages, setMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [openMenuDocId, setOpenMenuDocId] = useState<string | null>(null);
@@ -41,6 +50,17 @@ const BetsyDashboard = () => {
   const [newDocName, setNewDocName] = useState('');
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
   const [csvData, setCsvData] = useState<string[][] | null>(null);
+  const [isAiThinking, setIsAiThinking] = useState(false);
+
+  // Project State
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
+  const [newProjectRename, setNewProjectRename] = useState('');
+
 
   // Responsive Sidebar: Close on mobile, Open on desktop
   useEffect(() => {
@@ -71,51 +91,87 @@ const BetsyDashboard = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchDocuments = async () => {
+  const fetchProjects = async () => {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) console.error('Error fetching projects:', error);
+    else setProjects(data || []);
+  };
+
+  const fetchDocuments = async (projectId?: string) => {
+    // Only fetch if we have a project ID (strict isolation)
+    if (!projectId) {
+      setDocuments([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('documents')
       .select('*')
+      .eq('project_id', projectId)
       .order('created_at', { ascending: false });
 
     if (error) console.error('Error fetching docs:', error);
     else setDocuments(data || []);
   };
 
-  const createOrLoadConversation = async (title?: string) => {
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return;
+
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({
+        name: newProjectName,
+        user_id: session?.user?.id
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating project:', error);
+      alert(`Failed to create project: ${error.message}`);
+    } else {
+      setProjects([data, ...projects]);
+      setActiveProject(data);
+      setIsCreatingProject(false);
+      setNewProjectName('');
+      // Selecting new project clears docs and loads context
+      setDocuments([]);
+      setActiveDoc(null);
+    }
+  };
+
+  const createOrLoadConversation = async () => {
     try {
+      if (!activeProject) return null;
+
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       const userId = currentSession?.user?.id;
 
-      // If a title is provided (e.g. for a document), always create NEW conversation
-      // Otherwise try to load most recent generic one
-      let existingConversations = null;
-
-      if (!title) {
-        const { data, error } = await supabase
-          .from('conversations')
-          .select('id')
-          .order('updated_at', { ascending: false })
-          .limit(1);
-        existingConversations = data;
-      }
+      // Try to find existing conversation for this project
+      const { data: existingConversations } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('project_id', activeProject.id)
+        .order('updated_at', { ascending: false })
+        .limit(1);
 
       if (existingConversations && existingConversations.length > 0) {
         const conversationId = existingConversations[0].id;
         setCurrentConversationId(conversationId);
-        if (activeDoc) {
-          // If we have an active doc, load its messages specifically
-          await loadMessages(activeDoc.id);
-        } else {
-          await loadMessages(null);
-        }
+        await loadMessages(conversationId);
         return conversationId;
       } else {
-        // Create a new conversation
+        // Create a new conversation for this project
         const { data: newConversation, error: createError } = await supabase
           .from('conversations')
           .insert({
-            title: title || 'New Conversation',
-            user_id: userId
+            title: `${activeProject.name} Chat`,
+            user_id: userId,
+            project_id: activeProject.id
           })
           .select()
           .single();
@@ -126,6 +182,7 @@ const BetsyDashboard = () => {
         }
 
         setCurrentConversationId(newConversation.id);
+        setMessages([]);
         return newConversation.id;
       }
     } catch (error) {
@@ -134,29 +191,18 @@ const BetsyDashboard = () => {
     }
   };
 
-  const loadMessages = async (docId: string | null) => {
+  const loadMessages = async (conversationId: string) => {
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
-
-      if (docId) {
-        query = query.eq('document_id', docId);
-      } else {
-        query = query.is('document_id', null);
-      }
-
-      const { data, error } = await query;
 
       if (error) {
         console.warn('Could not load messages:', error.message);
       } else {
-        const key = docId || 'global';
-        setConversations(prev => ({
-          ...prev,
-          [key]: data || []
-        }));
+        setMessages(data || []);
       }
     } catch (error) {
       console.warn('Message loading not available:', error);
@@ -170,8 +216,7 @@ const BetsyDashboard = () => {
         .insert({
           conversation_id: conversationId,
           role,
-          content,
-          document_id: activeDoc?.id || null
+          content
         });
 
       if (error) {
@@ -194,8 +239,9 @@ const BetsyDashboard = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        fetchDocuments();
-        createOrLoadConversation();
+        // Initial Load
+        fetchProjects();
+        // Don't auto-fetch docs anymore, user must select project
       }
       setLoading(false);
     });
@@ -204,10 +250,6 @@ const BetsyDashboard = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-        fetchDocuments();
-        createOrLoadConversation();
-      }
     });
 
     return () => subscription.unsubscribe();
@@ -217,19 +259,20 @@ const BetsyDashboard = () => {
   // Close dropdown menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      // Don't close if clicking the menu itself (though stopPropagation in button handles most)
-      // The button needs to be excluded if not stopPropagated, but since we use stopProp, this is fine.
+      // Close both document and project menus when clicking outside
       setOpenMenuDocId(null);
+      setOpenMenuProjectId(null);
     };
 
-    if (openMenuDocId) {
+    if (openMenuDocId || openMenuProjectId) {
       document.addEventListener('click', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
-  }, [openMenuDocId]);
+  }, [openMenuDocId, openMenuProjectId]);
+
 
   // Parse CSV for preview
   useEffect(() => {
@@ -325,7 +368,8 @@ const BetsyDashboard = () => {
         file_type: fileExt,
         file_url: publicUrl,
         user_id: session?.user?.id,
-        storage_path: filePath
+        storage_path: filePath,
+        project_id: activeProject?.id
       })
       .select()
       .single();
@@ -344,17 +388,20 @@ const BetsyDashboard = () => {
           })
         });
 
-        if (!ingestResponse.ok) throw new Error('Ingestion failed');
+        if (!ingestResponse.ok) {
+          const errorData = await ingestResponse.json();
+          throw new Error(errorData.error || 'Ingestion failed');
+        }
 
         console.log('Document processed successfully');
       } catch (err: any) {
         console.error('Error processing document:', err);
-        let msg = 'Semantic processing failed.';
-        if (err instanceof Error) msg += ' ' + err.message;
-        alert(`Upload warning: ${msg}. Check console for details.`);
+        let msg = 'AI processing failed.';
+        if (err instanceof Error) msg = err.message;
+        alert(`Upload warning: ${msg}`);
       }
 
-      await fetchDocuments();
+      await fetchDocuments(activeProject?.id);
 
       // Automatically select the newly uploaded document
       if (insertedDoc) {
@@ -365,34 +412,28 @@ const BetsyDashboard = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || !activeProject) return;
 
-    // Ensure we have a conversation (optional - chat works without it)
+    // Ensure we have a conversation for this project
     let conversationId = currentConversationId;
     if (!conversationId) {
-      // If we are chatting with a document selected, create a dedicated conversation for it
-      const title = activeDoc ? `Chat about ${activeDoc.filename}` : undefined;
-      conversationId = await createOrLoadConversation(title);
+      conversationId = await createOrLoadConversation();
     }
 
     // Add user message
     const newMsg = { role: 'user' as const, content: chatInput };
-    const docKey = activeDoc?.id || 'global';
-
-    setConversations(prev => ({
-      ...prev,
-      [docKey]: [...(prev[docKey] || []), newMsg]
-    }));
+    setMessages(prev => [...prev, newMsg]);
 
     const currentInput = chatInput;
     setChatInput('');
+    setIsAiThinking(true);
 
     // Save user message to database (if available)
     if (conversationId) {
       await saveMessage('user', currentInput, conversationId);
     }
 
-    // Call API for semantic search
+    // Call API for semantic search across ALL documents in project
     try {
       // Get the current session token
       const { data: { session } } = await supabase.auth.getSession();
@@ -402,6 +443,7 @@ const BetsyDashboard = () => {
       }
 
       console.log('Sending message to API:', currentInput);
+      console.log('Project ID:', activeProject.id);
       console.log('Auth token available:', !!session.access_token);
 
       const response = await fetch('/api/chat', {
@@ -412,8 +454,10 @@ const BetsyDashboard = () => {
         },
         body: JSON.stringify({
           message: currentInput,
-          documentId: activeDoc?.id || undefined, // Search all if undefined
+          // GLOBAL WORKSPACE MODE: Search across ALL documents in project
+          projectId: activeProject.id  // This enables cross-document synthesis
         }),
+
       });
 
       console.log('API Response status:', response.status);
@@ -426,10 +470,8 @@ const BetsyDashboard = () => {
       }
 
       // Add AI response
-      setConversations(prev => ({
-        ...prev,
-        [docKey]: [...(prev[docKey] || []), { role: 'ai', content: data.answer }]
-      }));
+      setMessages(prev => [...prev, { role: 'ai', content: data.answer }]);
+      setIsAiThinking(false);
 
       // Save AI message to database (if available)
       if (conversationId) {
@@ -450,10 +492,8 @@ const BetsyDashboard = () => {
         errorMsg = `Error: ${error.message}`;
       }
 
-      setConversations(prev => ({
-        ...prev,
-        [docKey]: [...(prev[docKey] || []), { role: 'ai', content: errorMsg }]
-      }));
+      setMessages(prev => [...prev, { role: 'ai', content: errorMsg }]);
+      setIsAiThinking(false);
 
       // Save error message to database too (if available)
       if (conversationId) {
@@ -463,24 +503,8 @@ const BetsyDashboard = () => {
   };
 
   const handleDocumentClick = async (doc: Doc) => {
+    // Simply select the document - chat remains at project level
     setActiveDoc(doc);
-
-    // 1. Initialize conversation for this doc if not present
-    const docId = doc.id;
-    if (!conversations[docId]) {
-      // Load from DB
-      await loadMessages(docId);
-      // Also ensure we have a conversation ID for persistence
-      const title = `Chat about ${doc.filename}`;
-      await createOrLoadConversation(title);
-    } else {
-      // Just ensure conversation ID is ready for new messages
-      const title = `Chat about ${doc.filename}`;
-      // update currentConversationId without reloading messages
-      createOrLoadConversation(title).then(id => {
-        if (id) setCurrentConversationId(id);
-      });
-    }
   };
 
   const handlePreviewDocument = async (doc: Doc) => {
@@ -632,6 +656,105 @@ const BetsyDashboard = () => {
     }
   };
 
+  // Project Management Handlers
+  const handleRenameProject = async (projectId: string) => {
+    if (!newProjectRename.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ name: newProjectRename.trim() })
+        .eq('id', projectId);
+
+      if (error) throw error;
+
+      // Update local state
+      setProjects(projects.map(p =>
+        p.id === projectId ? { ...p, name: newProjectRename.trim() } : p
+      ));
+
+      if (activeProject?.id === projectId) {
+        setActiveProject({ ...activeProject, name: newProjectRename.trim() });
+      }
+
+      setRenamingProjectId(null);
+      setNewProjectRename('');
+      setOpenMenuProjectId(null);
+    } catch (error) {
+      console.error('Error renaming project:', error);
+      alert('Failed to rename project');
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (!confirm('Are you sure you want to delete this project? All documents and conversations will be permanently deleted.')) {
+      return;
+    }
+
+    try {
+      // 1. Get all documents in this project
+      const { data: projectDocs, error: docsError } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('project_id', projectId);
+
+      if (docsError) throw docsError;
+
+      // 2. Delete all document chunks for these documents
+      if (projectDocs && projectDocs.length > 0) {
+        const docIds = projectDocs.map(d => d.id);
+
+        await supabase
+          .from('document_chunks')
+          .delete()
+          .in('document_id', docIds);
+
+        // 3. Delete all chat messages for these documents
+        await supabase
+          .from('chat_messages')
+          .delete()
+          .in('document_id', docIds);
+
+        // 4. Delete all documents
+        await supabase
+          .from('documents')
+          .delete()
+          .eq('project_id', projectId);
+      }
+
+      // 5. Delete all conversations for this project
+      await supabase
+        .from('conversations')
+        .delete()
+        .eq('project_id', projectId);
+
+      // 6. Delete the project itself
+      const { error: deleteError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+
+      if (deleteError) throw deleteError;
+
+      // 7. Update local state
+      setProjects(projects.filter(p => p.id !== projectId));
+
+      if (activeProject?.id === projectId) {
+        setActiveProject(null);
+        setDocuments([]);
+        setActiveDoc(null);
+        setMessages([]);
+        setCurrentConversationId(null);
+      }
+
+      setOpenMenuProjectId(null);
+      console.log('Project and all associated data deleted successfully');
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      alert('Failed to delete project. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen w-full bg-[#050505] items-center justify-center text-white">
@@ -766,119 +889,282 @@ const BetsyDashboard = () => {
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto space-y-6">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-2">Knowledge Base</p>
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              onChange={handleFileUpload}
-              accept=".pdf,.csv,.xlsx,.txt"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 transition-all text-sm group disabled:opacity-50"
-            >
-              {uploading ? (
-                <Loader2 size={18} className="animate-spin text-indigo-400" />
-              ) : (
-                <UploadCloud size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
-              )}
-              <span>{uploading ? 'Uploading...' : 'Upload Document'}</span>
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            {documents.length === 0 ? (
-              <div className="p-4 text-center text-xs text-slate-500 italic">
-                No documents yet.
-              </div>
-            ) : (
-              documents.map(doc => (
-                <div
-                  key={doc.id}
-                  className={cn(
-                    "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
-                    activeDoc?.id === doc.id
-                      ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-300"
-                      : "hover:bg-white/5 text-slate-400",
-                    openMenuDocId === doc.id && "z-20 bg-white/5 ring-1 ring-white/10"
-                  )}
+          {!activeProject ? (
+            // Project List View
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Your Projects</p>
+                <button
+                  onClick={() => setIsCreatingProject(true)}
+                  className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  title="New Project"
                 >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <FolderPlus size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                {projects.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic px-4 py-2">No projects yet. Create one to get started.</p>
+                ) : (
+                  projects.map(p => (
                     <div
-                      onClick={() => handleDocumentClick(doc)}
-                      className="flex items-center gap-3 flex-1 cursor-pointer min-w-0 hover:text-indigo-300 transition-colors"
-                      title="Click to select for AI context"
+                      key={p.id}
+                      className="relative group"
                     >
-                      {doc.file_type === 'pdf' ? <FileText size={16} /> : <Table size={16} />}
-                      <span className="truncate">{doc.filename}</span>
-                    </div>
+                      {renamingProjectId === p.id ? (
+                        // Rename Input
+                        <div className="flex items-center gap-2 p-3 bg-white/5 rounded-xl border border-indigo-500/30">
+                          <input
+                            type="text"
+                            value={newProjectRename}
+                            onChange={(e) => setNewProjectRename(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameProject(p.id);
+                              if (e.key === 'Escape') {
+                                setRenamingProjectId(null);
+                                setNewProjectRename('');
+                              }
+                            }}
+                            className="flex-1 bg-transparent text-white text-sm outline-none"
+                            placeholder="New project name"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleRenameProject(p.id)}
+                            className="p-1.5 hover:bg-emerald-500/20 rounded text-emerald-400"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRenamingProjectId(null);
+                              setNewProjectRename('');
+                            }}
+                            className="p-1.5 hover:bg-red-500/20 rounded text-red-400"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        // Normal Project Item
+                        <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-slate-300 text-sm transition-all border border-transparent hover:border-white/10">
+                          <button
+                            onClick={async () => {
+                              setActiveProject(p);
+                              setDocuments([]);
+                              setActiveDoc(null);
+                              setMessages([]);
+                              await fetchDocuments(p.id);
+                              await createOrLoadConversation();
+                            }}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                          >
+                            <Folder size={18} className="text-indigo-500/80 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="block truncate font-medium text-white group-hover:text-indigo-200">{p.name}</span>
+                              <span className="block text-[10px] text-slate-500 truncate">
+                                {new Date(p.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <ChevronRight size={14} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                          </button>
 
-                    <div className="flex items-center gap-1">
-                      {activeDoc?.id === doc.id && (
-                        <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] mx-1" />
+                          {/* Three-dot Menu */}
+                          <div className="relative flex-shrink-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuProjectId(openMenuProjectId === p.id ? null : p.id);
+                              }}
+                              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <MoreVertical size={14} className="text-slate-400" />
+                            </button>
+
+                            {openMenuProjectId === p.id && (
+                              <div className="absolute right-0 top-8 z-30 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl overflow-hidden min-w-[140px]">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRenamingProjectId(p.id);
+                                    setNewProjectRename(p.name);
+                                    setOpenMenuProjectId(null);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                                >
+                                  <Edit3 size={12} className="text-indigo-400" />
+                                  Rename
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteProject(p.id);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                                >
+                                  <Trash2 size={12} />
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePreviewDocument(doc);
-                        }}
-                        className="p-2 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
-                        title="Open File Preview"
-                      >
-                        <Eye size={16} />
-                      </button>
                     </div>
-                  </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            // Active Project View (Documents)
+            <div className="space-y-4">
+              <button
+                onClick={() => {
+                  setActiveProject(null);
+                  setDocuments([]);
+                  setActiveDoc(null);
+                  setMessages([]);
+                  setCurrentConversationId(null);
+                }}
+                className="flex items-center gap-2 text-xs text-slate-400 hover:text-white px-2 mb-4 hover:bg-white/5 py-1.5 rounded-lg transition-colors w-fit"
+              >
+                <ArrowLeft size={14} /> Back to Projects
+              </button>
 
-                  {/* Three-dot menu button */}
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
-                      }}
-                      className="p-2 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
-                      aria-label="More options"
-                    >
-                      <MoreVertical size={16} className="text-slate-400" />
-                    </button>
-
-                    {/* Dropdown menu */}
-                    {openMenuDocId === doc.id && (
-                      <div className="absolute right-0 top-8 z-50 w-40 bg-black/95 border border-white/20 rounded-lg shadow-xl backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenamingDocId(doc.id);
-                            setNewDocName(doc.filename);
-                            setOpenMenuDocId(null);
-                          }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
-                        >
-                          <Edit3 size={12} className="text-indigo-400" />
-                          Rename
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteDocument(doc.id);
-                          }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 size={12} />
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
+              <div className="px-3 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl mb-6">
+                <div className="flex items-center gap-2 text-indigo-400 mb-1">
+                  <Lock size={12} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Active Project</span>
                 </div>
-              ))
-            )}
-          </div>
+                <h3 className="font-semibold text-white truncate text-sm">{activeProject.name}</h3>
+              </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-2">Project Files</p>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept=".pdf,.csv,.xlsx,.txt"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 transition-all text-sm group disabled:opacity-50"
+                  >
+                    {uploading ? (
+                      <Loader2 size={18} className="animate-spin text-indigo-400" />
+                    ) : (
+                      <UploadCloud size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
+                    )}
+                    <span>{uploading ? 'Uploading...' : 'Upload Document'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {documents.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-500 italic">
+                      No documents yet.
+                    </div>
+                  ) : (
+                      <>
+                        {documents.map(doc => (
+                          <div
+                            key={doc.id}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
+                              "hover:bg-white/5 text-slate-400",
+                              openMenuDocId === doc.id && "z-20 bg-white/5 ring-1 ring-white/10"
+                            )}
+                          >
+                            {/* Document Info (Non-clickable, just visual inventory) */}
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              {doc.file_type === 'pdf' ? <FileText size={16} className="text-indigo-400" /> : <Table size={16} className="text-emerald-400" />}
+                              <div className="flex-1 min-w-0">
+                                <span className="block truncate text-slate-300">{doc.filename}</span>
+                                <span className="text-[10px] text-slate-600">
+                                  {doc.file_type?.toUpperCase()} • {new Date(doc.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-1">
+                              {/* Preview Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePreviewDocument(doc);
+                                }}
+                                className="p-2 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                                title="Preview Document"
+                              >
+                                <Eye size={16} />
+                              </button>
+
+                              {/* Three-dot menu button */}
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
+                                  }}
+                                  className="p-2 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                                  aria-label="More options"
+                                >
+                                  <MoreVertical size={16} className="text-slate-400" />
+                                </button>
+
+                                {/* Dropdown menu */}
+                                {openMenuDocId === doc.id && (
+                                  <div className="absolute right-0 top-8 z-50 w-40 bg-black/95 border border-white/20 rounded-lg shadow-xl backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePreviewDocument(doc);
+                                        setOpenMenuDocId(null);
+                                      }}
+                                      className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                                    >
+                                      <Eye size={12} className="text-blue-400" />
+                                      Preview
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setRenamingDocId(doc.id);
+                                        setNewDocName(doc.filename);
+                                        setOpenMenuDocId(null);
+                                      }}
+                                      className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                                    >
+                                      <Edit3 size={12} className="text-indigo-400" />
+                                      Rename
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteDocument(doc.id);
+                                      }}
+                                      className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+
+                                    >
+                                      <Trash2 size={12} />
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </>
+                  )}
+                </div>
+            </div>
+          )}
         </div>
 
         <div className="p-4 bg-white/[0.02]">
@@ -964,9 +1250,9 @@ const BetsyDashboard = () => {
               }
               description={
                 <p className="mt-2 text-slate-400 text-sm max-w-md">
-                  {activeDoc
-                    ? `Analyzing context from ${activeDoc.filename}...`
-                    : "Ask questions about your uploaded documents."}
+                  {activeProject
+                    ? `Ask questions about all documents in "${activeProject.name}"`
+                    : "Select a project to start chatting with your documents."}
                 </p>
               }
             />
@@ -974,7 +1260,7 @@ const BetsyDashboard = () => {
 
           {/* Chat Messages */}
           <div className="max-w-3xl mx-auto space-y-4">
-            {(conversations[activeDoc?.id || 'global'] || []).map((msg, idx) => (
+            {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={cn(
@@ -1004,16 +1290,26 @@ const BetsyDashboard = () => {
                       </ReactMarkdown>
                     </div>
                   </div>
-                  {msg.role === 'ai' && idx === (conversations[activeDoc?.id || 'global'] || []).length - 1 && activeDoc && (
-                    <div className="flex gap-2">
-                      <button className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-[11px] hover:bg-white/10 transition-colors flex items-center gap-2">
-                        <Search size={12} /> View Source Chunks
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
+
+            {/* Thinking Indicator */}
+            {isAiThinking && (
+              <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300 flex-row">
+                <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold bg-indigo-600">
+                  AI
+                </div>
+                <div className="items-start space-y-2 max-w-[70%]">
+                  <div className="px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-slate-300">
+                    <div className="flex items-center gap-2 text-sm text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                      <span className="italic">Betsy is thinking...</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Invisible div to auto-scroll to */}
             <div id="chat-end" />
           </div>
@@ -1036,7 +1332,8 @@ const BetsyDashboard = () => {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder={activeDoc ? `Ask about ${activeDoc.filename}...` : "Ask anything about your knowledge base..."}
+              placeholder={activeProject ? `Ask anything about "${activeProject.name}" documents...` : "Select a project to start chatting..."}
+              disabled={!activeProject}
               className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 pr-14 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
             />
 
@@ -1056,7 +1353,7 @@ const BetsyDashboard = () => {
 
             <button
               onClick={handleSendMessage}
-              disabled={!chatInput.trim()}
+              disabled={!chatInput.trim() || !activeProject}
               className="absolute right-3 top-2.5 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors disabled:bg-slate-700 disabled:opacity-50"
             >
               <Send size={18} className="text-white" />
@@ -1065,6 +1362,76 @@ const BetsyDashboard = () => {
 
         </div>
       </main>
+
+      {/* Create Project Modal */}
+      {isCreatingProject && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => {
+            setIsCreatingProject(false);
+            setNewProjectName('');
+          }}
+        >
+          <div
+            className="bg-black/95 border border-white/20 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Create New Project</h3>
+              <button
+                onClick={() => {
+                  setIsCreatingProject(false);
+                  setNewProjectName('');
+                }}
+                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+              >
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="projectName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                  Project Name
+                </label>
+                <input
+                  id="projectName"
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleCreateProject();
+                    }
+                  }}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                  placeholder="e.g. Q1 Marketing Campaign"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setIsCreatingProject(false);
+                    setNewProjectName('');
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateProject}
+                  disabled={!newProjectName.trim()}
+                  className="px-4 py-2 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create Project
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Rename Dialog Modal */}
       {renamingDocId && (
