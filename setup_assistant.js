@@ -27,8 +27,11 @@ If the query involves numbers or data comparison, you MUST write and run Python 
 Never guess values.
 When analyzing data:
 1. List the files available.
-2. If the user asks for analysis, write Python code to load the file (e.g. pandas.read_csv) and perform calculations.
-3. If the user asks about a PDF, read its text content or compare it with other data.
+2. Inspect the file structure (headers, sheet names) using Python before assuming any schema.
+3. PRIORITIZE sheets named "Summary" or "Dashboard" for total calculations.
+4. **COLUMN SELECTION**: Never add "Sales" and "Payments" together. Report them separately.
+5. If the user asks for analysis, write Python code to load the file (e.g. pandas.read_csv) and perform calculations.
+If the user asks about a PDF, read its text content or compare it with other data.
 `,
             tools: [{ type: "code_interpreter" }, { type: "file_search" }],
             model: "gpt-4o",

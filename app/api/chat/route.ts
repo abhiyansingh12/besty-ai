@@ -146,34 +146,39 @@ CRITICAL DATA ANALYSIS PROTOCOL:
 1. **USE CODE INTERPRETER (PYTHON) FIRST**:
    - For any Excel (.xlsx, .xls) or CSV file analysis, you **MUST** use the Code Interpreter tool.
    - **DO NOT** rely on text extraction or guessing.
-   - Write and execute Python code to load the data:
-     \`\`\`python
-     import pandas as pd
-     # List files to find the correct system path
-     import os
-     print(os.listdir('/mnt/data'))
-     # Load the file
-     df = pd.read_excel('/mnt/data/file_name.xlsx')
-     print(df.head())
-     print(df.columns)
-     \`\`\`
+   - Write and execute Python code to load the data.
 
-2. **INSPECT BEFORE ANSWERING**:
-   - Always print \`df.head()\` and \`df.columns\` to understand the structure.
-   - Do NOT assume column names (e.g., "Region" might be "Loc", "Location", or "State").
-   - Check data types (strings vs numbers).
+2. **SHEET SELECTION & DATA INTEGRITY (CRITICAL)**:
+   - **Step 1: Check Sheet Names**:
+     - Run \`pd.ExcelFile(path).sheet_names\`.
+     - If the user asks for "Total Sales" or "Summary", **PRIORITIZE** sheets named "Summary", "Dashboard", "Totals", or similar.
+     - **AVOID** using "Detail" sheets for high-level totals unless no summary exists, as they may contain unaggregated data or duplicates.
+   - **Step 2: Inspect Structure**:
+     - Load the first 10 rows of the chosen sheet: \`df = pd.read_excel(path, sheet_name="SheetName", header=None, nrows=10)\`.
+     - Identify the correct header row (it might be row 2 or 3). Reload with \`header=N\`.
 
-3. **HANDLING "SUMMARY" VS "DETAIL" SHEETS**:
-   - If the file has multiple sheets, check them: \`pd.ExcelFile(path).sheet_names\`.
-   - Prefer "Detail", "Data", or "Transactions" sheets over "Summary" sheets if available, as they allow for more accurate aggregation.
+3. **COLUMN SELECTION & METRIC ISOLATION (CRITICAL)**:
+   - **Identify the Right Column**: If the user asks for "Sales", look specifically for columns named "Sales", "Amount", "Total Sales", or "TTL_SALES".
+   - **DO NOT SUM ACROSS COLUMNS**: Never add "Sales" and "Payments" (or "Credits") together unless explicitly asked. These are distinct financial metrics.
+   - **Report Separately**: If the data contains both Sales and Payments, report them as separate line items (e.g., "Total Sales: $1.9M, Total Payments: $149k").
+   - **Check for "YTD" vs "MTD"**: If both Year-to-Date (YTD) and Month-to-Date (MTD) columns exist, use YTD for "total" queries unless specified otherwise.
 
-4. **EXACT FILTERING**:
-   - if asking for "Tennessee", check if the column uses full names ("Tennessee") or codes ("TN").
-   - Filter **EXACTLY**: \`df[df['Location'].str.contains('Tennessee|Atlanta', case=False, na=False)]\`.
+4. **CALCULATION ACCURACY**:
+   - **Exclude Totals**: When summing a column, check if the dataset already contains "Total", "Subtotal", "Grand Total", or "TTL" rows.
+     - Example: \`df = df[~df['Region'].astype(str).str.contains('Total|TTL|Grand', case=False, na=False)]\`.
+   - **Verify Data Types**: Ensure numbers are floats, not strings. Strip '$' and ',' characters.
+   - **Cross-Reference**: If multiple sheets exist (e.g., "Summary" and "Detail"), compare the totals from both. If they differ significantly, report the "Summary" sheet value but mention the discrepancy.
 
-5. **VERIFY**:
-   - Double-check your code's output before responding.
-   - If the result seems wrong (e.g., zero sales), try a broader filter or check for leading/trailing whitespace.
+5. **FILTERING**:
+   - Filter **EXACTLY** for the user's request (e.g., "Atlanta" vs "Atlantic").
+   - Use case-insensitive matching: \`df[df['Col'].str.contains('^Atlanta$', case=False, na=False)]\`.
+   - **PRINT MATCHED ROWS**: In your Python output, print the unique values of the column you filtered on to verify you caught the right rows (e.g., "Matched Regions: ['Atlanta']").
+
+6. **REPORTING**:
+   - State clearly: "I analyzed the sheet '[Sheet Name]' from file '[Filename]'."
+   - **SHOW YOUR WORK**: Explicitly list the rows/categories AND columns you included.
+     - E.g., "I summed the 'YTD Sales' column for 'Atlanta' ($1.6M) and 'Tennessee' ($174k)."
+   - If you found both Sales and Payments, explicitly state: "I have separated Sales from Payments to avoid double-counting."
 `.trim()
       }
     );
