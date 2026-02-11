@@ -1,5 +1,4 @@
--- Enable the pgvector extension to work with embedding vectors
-create extension if not exists vector;
+
 
 -- Create a private bucket for documents
 insert into storage.buckets (id, name, public) 
@@ -44,68 +43,4 @@ begin
   end if;
 end $$;
 
--- Create a table for document chunks (for semantic search)
-create table if not exists public.document_chunks (
-  id uuid primary key default gen_random_uuid(),
-  document_id uuid references public.documents(id) on delete cascade,
-  content text not null,
-  embedding vector(1536), -- OpenAI embedding dimension
-  created_at timestamptz default now()
-);
 
--- Enable RLS for chunks
-alter table public.document_chunks enable row level security;
-
--- Policy for viewing chunks
-do $$
-begin
-  if not exists (select 1 from pg_policies where policyname = 'Users can view their own document chunks') then
-    create policy "Users can view their own document chunks" on public.document_chunks
-      for select using (exists (
-        select 1 from public.documents
-        where public.documents.id = public.document_chunks.document_id
-        and public.documents.user_id = auth.uid()
-      ));
-  end if;
-
-  if not exists (select 1 from pg_policies where policyname = 'Users can insert their own document chunks') then
-    create policy "Users can insert their own document chunks" on public.document_chunks
-      for insert with check (exists (
-        select 1 from public.documents
-        where public.documents.id = public.document_chunks.document_id
-        and public.documents.user_id = auth.uid()
-      ));
-  end if;
-end $$;
-
--- Create a function to search for documents
-create or replace function match_documents (
-  query_embedding vector(1536),
-  match_threshold float,
-  match_count int,
-  filter_document_id uuid default null
-)
-returns table (
-  id uuid,
-  document_id uuid,
-  content text,
-  similarity float
-)
-language plpgsql
-as $$
-begin
-  return query
-  select
-    document_chunks.id,
-    document_chunks.document_id,
-    document_chunks.content,
-    1 - (document_chunks.embedding <=> query_embedding) as similarity
-  from document_chunks
-  join documents on documents.id = document_chunks.document_id
-  where documents.user_id = auth.uid()
-  and 1 - (document_chunks.embedding <=> query_embedding) > match_threshold
-  and (filter_document_id is null or document_chunks.document_id = filter_document_id)
-  order by document_chunks.embedding <=> query_embedding
-  limit match_count;
-end;
-$$;

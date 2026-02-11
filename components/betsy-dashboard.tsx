@@ -560,16 +560,7 @@ const BetsyDashboard = () => {
         // Continue with deletion even if chat deletion fails
       }
 
-      // 2. Delete associated chunks/embeddings
-      const { error: chunksError } = await supabase
-        .from('document_chunks')
-        .delete()
-        .eq('document_id', docId);
 
-      if (chunksError) {
-        console.warn('Error deleting chunks:', chunksError);
-        // Continue with deletion even if chunks fail
-      }
 
       // 3. Delete the file from storage
       if (doc?.file_url) {
@@ -700,14 +691,9 @@ const BetsyDashboard = () => {
 
       if (docsError) throw docsError;
 
-      // 2. Delete all document chunks for these documents
+      // 2. Delete all document chunks for these documents (No longer needed)
       if (projectDocs && projectDocs.length > 0) {
         const docIds = projectDocs.map(d => d.id);
-
-        await supabase
-          .from('document_chunks')
-          .delete()
-          .in('document_id', docIds);
 
         // 3. Delete all chat messages for these documents
         await supabase

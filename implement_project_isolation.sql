@@ -1,5 +1,4 @@
--- 0. Enable Vector Extension (REQUIRED for AI)
-create extension if not exists vector;
+
 
 -- 1. Create Projects Table (The Core of Isolation)
 create table if not exists projects (
@@ -50,14 +49,7 @@ drop policy if exists "Users can manage their own documents" on documents;
 create policy "Users can manage their own documents" on documents for all using (auth.uid() = user_id);
 
 
--- 3. Create Document Chunks Table (for vectors)
-create table if not exists document_chunks (
-  id uuid default gen_random_uuid() primary key,
-  document_id uuid references documents(id) on delete cascade not null,
-  content text not null,
-  embedding vector(1536),
-  metadata jsonb
-);
+
 
 -- 4. Create Conversations & Messages Tables
 create table if not exists conversations (
@@ -121,41 +113,7 @@ end $$;
 
 
 -- 7. Define match_documents function (Project-Aware)
-drop function if exists match_documents;
 
-create or replace function match_documents (
-  query_embedding vector(1536),
-  match_threshold float,
-  match_count int,
-  filter_document_id uuid default null,
-  filter_project_id uuid default null
-)
-returns table (
-  id uuid,
-  content text,
-  similarity float,
-  document_id uuid
-)
-language plpgsql
-as $$
-begin
-  return query
-  select
-    document_chunks.id,
-    document_chunks.content,
-    1 - (document_chunks.embedding <=> query_embedding) as similarity,
-    document_chunks.document_id
-  from document_chunks
-  join documents on documents.id = document_chunks.document_id
-  where 1 - (document_chunks.embedding <=> query_embedding) > match_threshold
-  -- Filter by Document ID if provided
-  and (filter_document_id is null or document_chunks.document_id = filter_document_id)
-  -- Filter by Project ID if provided (ISOLATION LAYER)
-  and (filter_project_id is null or documents.project_id = filter_project_id)
-  order by document_chunks.embedding <=> query_embedding
-  limit match_count;
-end;
-$$;
 
 -- 8. FORCE API SCHEMA CACHE RELOAD (Fixes "Could not find the table" error)
 NOTIFY pgrst, 'reload config';

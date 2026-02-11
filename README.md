@@ -1,40 +1,37 @@
-# Next.js Spline Demo
+# Betsy AI
 
-This project was bootstrapped with [Create Next App](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+Betsy AI is an advanced "ChatGPT for your Knowledge Base" application.
 
-## Getting Started
+## Key Features
 
-First, run the development server:
+-   **Project-Based Isolation**: Secure workspaces for different projects.
+-   **Excel/CSV Analysis**: Uses **OpenAI Code Interpreter** to execute Python code on your data for 100% accuracy (no hallucinations).
+-   **Document Chat**: Chat with your files naturally.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Architecture
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+-   **Frontend**: Next.js 14 (App Router)
+-   **Backend**: Next.js API Routes + Supabase
+-   **AI**: OpenAI Assistants API (Code Interpreter)
+-   **Database**: Supabase (PostgreSQL)
+-   **Local Service**: A lightweight Python service is used for *previewing* data files in the UI, but all analysis happens securely in OpenAI's sandbox.
 
-## Components
+## Quick Start
 
-The following components have been integrated into `components/ui`:
+1.  **Start the Python Service** (for UI previews):
+    ```bash
+    cd python_service
+    ./start.sh
+    ```
 
-- **SplineScene** (`splite.tsx`): Wrapper for Spline 3D scenes.
-- **Spotlight** (`spotlight.tsx`): Aceternity UI spotlight effect.
-- **InteractiveSpotlight** (`interactive-spotlight.tsx`): Ibelick UI interactive spotlight (move mouse).
-- **Card** (`card.tsx`): Shadcn card component.
-- **SplineSceneBasic** (`spline-scene-basic.tsx`): Demo composition.
+2.  **Start the Web App**:
+    ```bash
+    # Open a new terminal
+    npm run dev
+    ```
 
-## Project Structure
+3.  Open [http://localhost:3000](http://localhost:3000) and upload a file!
 
-- `app/`: App router pages.
-- `components/ui/`: Reusable UI components.
-- `lib/`: Utility functions (cn).
-- `public/`: Static assets.
+## Documentation
 
-## Notes
-
-- The original `index.html` and other files have been moved to `_legacy/`.
+-   [Code Interpreter Architecture](./CODE_INTERPRETER_ARCHITECTURE.md)

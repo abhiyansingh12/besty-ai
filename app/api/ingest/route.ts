@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { tmpdir } from 'os';
 
-const pdfParse = require('pdf-parse');
+
 
 // Helper to check key
 if (!process.env.OPENAI_API_KEY) {
