@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText, Table, Search,
   UploadCloud, Send, ChevronRight, Loader2,
@@ -51,6 +51,34 @@ const BetsyDashboard = () => {
   const [csvData, setCsvData] = useState<string[][] | null>(null);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [isViewingDocs, setIsViewingDocs] = useState(false);
+
+  // Analyze CSV rows for color-coding sections
+  const rowStyles = useMemo(() => {
+    if (!csvData) return [];
+    const styles = new Array(csvData.length).fill('hover:bg-slate-50');
+    let currentSection = 'neutral'; // 'sales', 'commission', 'neutral'
+
+    csvData.forEach((row, index) => {
+        const rowText = row.join(' ').toLowerCase();
+        
+        // Detect Section Headers (Heuristic)
+        if (rowText.includes('sales summary') || rowText.includes('gross sales') || rowText.includes('sales volume')) {
+            currentSection = 'sales';
+        } else if (rowText.includes('payment') || rowText.includes('commission') || rowText.includes('payout')) {
+            currentSection = 'commission';
+        }
+
+        // Apply styles based on current section
+        if (currentSection === 'sales') {
+            styles[index] = 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-100';
+        } else if (currentSection === 'commission') {
+            styles[index] = 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-100';
+        } else {
+            styles[index] = 'hover:bg-slate-50 border-slate-100';
+        }
+    });
+    return styles;
+  }, [csvData]);
 
   // Project State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1620,9 +1648,9 @@ const BetsyDashboard = () => {
                         </thead>
                         <tbody>
                           {csvData.slice(1).map((row, i) => (
-                            <tr key={i} className="hover:bg-slate-50 border-b border-slate-100">
+                            <tr key={i} className={`border-b transition-colors ${rowStyles[i + 1] || 'hover:bg-slate-50 border-slate-100'}`}>
                               {row.map((cell, j) => (
-                                <td key={j} className="border-r border-slate-200 px-4 py-2 whitespace-nowrap max-w-xs truncate" title={cell}>
+                                <td key={j} className="border-r border-slate-200/50 px-4 py-2 whitespace-nowrap max-w-xs truncate" title={cell}>
                                   {cell}
                                 </td>
                               ))}

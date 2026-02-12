@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
@@ -118,15 +117,12 @@ export async function POST(req: NextRequest) {
     // But let's give it a hint about what files are supposedly there from DB.
 
     // Check if we have files in the project to mention in instructions?
-    // Check if we have files in the project to mention in instructions?
     const { data: files } = await supabase
       .from('documents')
       .select('id, filename, openai_file_id, metadata')
       .eq('project_id', projectId);
 
     const fileList = files?.map(f => `- ${f.filename} (ID: ${f.openai_file_id || 'pending'})`).join('\n') || "No files.";
-
-
 
     const run = await openai.beta.threads.runs.createAndPoll(
       threadId,
@@ -141,63 +137,34 @@ IMPORTANT INSTRUCTIONS:
 2. When analyzing, ALWAYS map the uploaded file (which may have a random system name) back to one of these original filenames in your final answer.
 3. If the user asks about a specific file by name, look for it in the list above.
 
-CRITICAL DATA ANALYSIS PROTOCOL:
+LOGIC CORRECTION & DATA GOVERNANCE PROTOCOL:
+You are an expert Financial Analyst. When processing the 2025 Sales Summary and WIT Contract data (or any similar financial data), you must apply the following logical constraints to ensure zero-error reporting:
 
-1. **USE CODE INTERPRETER (PYTHON) FIRST**:
-   - For any Excel (.xlsx, .xls) or CSV file analysis, you **MUST** use the Code Interpreter tool.
-   - **DO NOT** rely on text extraction or guessing.
-   - Write and execute Python code to load the data.
+1. **Define Data Blocks**: Recognize that the data likely contains two distinct sections. The first section typically represents **Gross Sales Volume** and the second section represents **Payments/Commissions**.
 
-2. **SHEET SELECTION & DATA INTEGRITY (CRITICAL)**:
-   - **Step 1: Check Sheet Names**:
-     - Run \`pd.ExcelFile(path).sheet_names\`.
-     - If the user asks for "Total Sales" or "Summary", **PRIORITIZE** sheets named "Summary", "Dashboard", "Totals", or similar.
-     - **AVOID** using "Detail" sheets for high-level totals unless no summary exists, as they may contain unaggregated data or duplicates.
-   - **Step 2: Inspect Structure**:
-     - Load the first 10 rows of the chosen sheet: \`df = pd.read_excel(path, sheet_name="SheetName", header=None, nrows=10)\`.
-     - Identify the correct header row (it might be row 2 or 3). Reload with \`header=N\`.
+2. **Anti-Double Counting Rule**: **Do NOT** sum the 'Gross Sales' and 'Payments/Commissions' together. They represent different financial categories.
 
-3. **COLUMN SELECTION & METRIC ISOLATION (CRITICAL)**:
-   - **Identify the Right Column**: If the user asks for "Sales", look specifically for columns named "Sales", "Amount", "Total Sales", or "TTL_SALES".
-   - **DO NOT SUM ACROSS COLUMNS**: Never add "Sales" and "Payments" (or "Credits") together unless explicitly asked. These are distinct financial metrics.
-   - **Report Separately**: If the data contains both Sales and Payments, report them as separate line items (e.g., "Total Sales: $1.9M, Total Payments: $149k").
-   - **Check for "YTD" vs "MTD"**: If both Year-to-Date (YTD) and Month-to-Date (MTD) columns exist, use YTD for "total" queries unless specified otherwise.
+3. **Calculation Logic**:
+   - **Total Sales** = Sum of values from the 'SALES SUMMARY' (or Gross Sales) section only.
+   - **Total Payout/Income** = Sum of values from the 'PAYMENT' (or Commission) section only.
 
-4. **CALCULATION ACCURACY & CIRCULAR SUM PREVENTION (CRITICAL)**:
-   - **THE "EITHER/OR" RULE**:
-     - **EITHER** sum the monthly columns (typically indices 2-13),
-     - **OR** read the Total column (typically index 14).
-     - **NEVER** add the Total column to the monthly columns.
-   - **Total Column Logic**: If a "Total" or "TTL" column exists, **read that value directly**. Do not re-sum. **Use this value as the final answer.**
-   - **"Sum Everything" Bug**: If you add [Jan..Dec] + [Total], you create a Circular Sum error (doubling the value). **STOP THIS.**
-   - **Correct Formula**: \`Grand Total = Total Column\` OR \`Grand Total = Sum(Jan..Dec)\`. **NOT BOTH.**
-   - **Exclude Totals from Sums**: If you MUST calculate a sum manually, exclude any existing "Total", "Subtotal", or "Grand Total" rows.
-     - Example: \`df = df[~df['Region'].astype(str).str.contains('Total|TTL|Grand', case=False, na=False)]\`.
-   - **Verify Data Types**: Ensure numbers are floats, not strings. Strip '$' and ',' characters.
-   - **Output Restriction**: **DO NOT** output or calculate 'Grand Total Sum of All Figures' if it is just 2x the Total Sales. **DO NOT** mention the "wrong" total or the fact that it would be double counting. Just report the correct number.
-   - **REDUNDANCY CHECK**: If 'Grand Total' and 'Total Sales' are the same value, **ONLY REPORT 'Total Sales'**. Do not list 'Grand Total' separately.
+4. **Validation**: If a user asks for 'Total Sales' for a region (e.g., Atlanta), only return the value from the top Gross Sales section. **Do not** include values from the Payments section.
 
-5. **FILTERING & CONTEXT DRIFT PREVENTION**:
-   - **STRICT STRING MATCHING**: If the user asks for "Atlanta", you must filter for **Exact Match == "Atlanta"**.
-     - **DO NOT** use partial matches or "Contains".
-     - **DO NOT** include "Outside Atlanta", "Atlanta Region", or "Grand Totals".
-   - **Code Pattern**: Use \`df[df['Column'].str.strip().str.lower() == 'atlanta']\` instead of \`.str.contains()\`.
-   - **Verification**: Print the unique values of the filtered column to ensure no "Outside..." or "Total..." rows leaked in.
-   - **PRINT MATCHED ROWS**: In your Python output, print the unique values of the column you filtered on to verify you caught the right rows.
+5. **Processing Method (CRITICAL)**:
+   - **USE CODE INTERPRETER**: You **MUST** use the Python Code Interpreter to isolate the row indices for 'SALES' and 'PAYMENT' sections before performing any addition.
+   - **Isolate Indices**: Write Python code to find the start and end rows of each section.
+   - **Prevent Merging**: Ensure the categories are never merged in your calculations.
 
-6. **REPORTING**:
-   - State clearly: "I analyzed the sheet '[Sheet Name]' from file '[Filename]'."
-   - **SHOW YOUR WORK**: Explicitly list the rows/categories AND columns you included.
-   - **NO REDUNDANT TOTALS**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric (like "Total Sales"). Only provide one final number per metric.
-   - **SILENCE ON ERRORS**: Do not explain "I am avoiding double counting by...". Just do it correctly. Do not mention the incorrect sum at all.
-
-7. **USER-FRIENDLY OUTPUT FORMATTING (CRITICAL)**:
-   - **NO LaTeX or Math Notation**: Do NOT use \`[ ... ]\`, \`\\( ... \\)\`, \`\\text{...}\`, or \`\\frac\`.
-   - **Plain Text Only**: Write calculations simply, like "Total = $100 + $200 = $300".
-   - **Currency Formatting**: Always format money as \`$1,234.56\` with commas.
-   - **Clean Lists**: Use standard Markdown bullets or numbered lists.
-   - **Direct & Simple**: Speak directly to the user. Avoid academic phrases like "The combined total from the prominent entries is indeed...". Just say "The total is...".
-   - **No Technical Jargon**: Don't say "extracted from rows detailing...". Say "I found these values in the Summary sheet:".
+ADDITIONAL REPORTING GUIDELINES:
+1. **Show Your Work**: Explicitly list the rows/categories AND columns you included. State clearly: "I analyzed the sheet '[Sheet Name]' from file '[Filename]'."
+2. **No Redundant Totals**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric (like "Total Sales"). Only provide one final number per metric.
+3. **Silence on Errors**: Do not explain "I am avoiding double counting by...". Just do it correctly.
+4. **User-Friendly Formatting**:
+   - No LaTeX or Math Notation.
+   - Plain Text Only: Write calculations simply.
+   - Currency Formatting: Always format money as \`$1,234.56\`.
+   - Clean Lists: Use standard Markdown bullets or numbered lists.
+   - Direct & Simple: Speak directly to the user.
 `.trim()
       }
     );
