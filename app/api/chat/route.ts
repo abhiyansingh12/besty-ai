@@ -163,22 +163,33 @@ CRITICAL DATA ANALYSIS PROTOCOL:
    - **Report Separately**: If the data contains both Sales and Payments, report them as separate line items (e.g., "Total Sales: $1.9M, Total Payments: $149k").
    - **Check for "YTD" vs "MTD"**: If both Year-to-Date (YTD) and Month-to-Date (MTD) columns exist, use YTD for "total" queries unless specified otherwise.
 
-4. **CALCULATION ACCURACY**:
-   - **Exclude Totals**: When summing a column, check if the dataset already contains "Total", "Subtotal", "Grand Total", or "TTL" rows.
+4. **CALCULATION ACCURACY & CIRCULAR SUM PREVENTION (CRITICAL)**:
+   - **THE "EITHER/OR" RULE**:
+     - **EITHER** sum the monthly columns (typically indices 2-13),
+     - **OR** read the Total column (typically index 14).
+     - **NEVER** add the Total column to the monthly columns.
+   - **Total Column Logic**: If a "Total" or "TTL" column exists, **read that value directly**. Do not re-sum. **Use this value as the final answer.**
+   - **"Sum Everything" Bug**: If you add [Jan..Dec] + [Total], you create a Circular Sum error (doubling the value). **STOP THIS.**
+   - **Correct Formula**: \`Grand Total = Total Column\` OR \`Grand Total = Sum(Jan..Dec)\`. **NOT BOTH.**
+   - **Exclude Totals from Sums**: If you MUST calculate a sum manually, exclude any existing "Total", "Subtotal", or "Grand Total" rows.
      - Example: \`df = df[~df['Region'].astype(str).str.contains('Total|TTL|Grand', case=False, na=False)]\`.
    - **Verify Data Types**: Ensure numbers are floats, not strings. Strip '$' and ',' characters.
-   - **Cross-Reference**: If multiple sheets exist (e.g., "Summary" and "Detail"), compare the totals from both. If they differ significantly, report the "Summary" sheet value but mention the discrepancy.
+   - **Output Restriction**: **DO NOT** output or calculate 'Grand Total Sum of All Figures' if it is just 2x the Total Sales. **DO NOT** mention the "wrong" total or the fact that it would be double counting. Just report the correct number.
+   - **REDUNDANCY CHECK**: If 'Grand Total' and 'Total Sales' are the same value, **ONLY REPORT 'Total Sales'**. Do not list 'Grand Total' separately.
 
-5. **FILTERING**:
-   - Filter **EXACTLY** for the user's request (e.g., "Atlanta" vs "Atlantic").
-   - Use case-insensitive matching: \`df[df['Col'].str.contains('^Atlanta$', case=False, na=False)]\`.
-   - **PRINT MATCHED ROWS**: In your Python output, print the unique values of the column you filtered on to verify you caught the right rows (e.g., "Matched Regions: ['Atlanta']").
+5. **FILTERING & CONTEXT DRIFT PREVENTION**:
+   - **STRICT STRING MATCHING**: If the user asks for "Atlanta", you must filter for **Exact Match == "Atlanta"**.
+     - **DO NOT** use partial matches or "Contains".
+     - **DO NOT** include "Outside Atlanta", "Atlanta Region", or "Grand Totals".
+   - **Code Pattern**: Use \`df[df['Column'].str.strip().str.lower() == 'atlanta']\` instead of \`.str.contains()\`.
+   - **Verification**: Print the unique values of the filtered column to ensure no "Outside..." or "Total..." rows leaked in.
+   - **PRINT MATCHED ROWS**: In your Python output, print the unique values of the column you filtered on to verify you caught the right rows.
 
 6. **REPORTING**:
    - State clearly: "I analyzed the sheet '[Sheet Name]' from file '[Filename]'."
    - **SHOW YOUR WORK**: Explicitly list the rows/categories AND columns you included.
-     - E.g., "I summed the 'YTD Sales' column for 'Atlanta' ($1.6M) and 'Tennessee' ($174k)."
-   - If you found both Sales and Payments, explicitly state: "I have separated Sales from Payments to avoid double-counting."
+   - **NO REDUNDANT TOTALS**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric (like "Total Sales"). Only provide one final number per metric.
+   - **SILENCE ON ERRORS**: Do not explain "I am avoiding double counting by...". Just do it correctly. Do not mention the incorrect sum at all.
 `.trim()
       }
     );
@@ -198,10 +209,13 @@ CRITICAL DATA ANALYSIS PROTOCOL:
           if (content.type === 'text') {
             responseText += content.text.value + "\n";
           } else if (content.type === 'image_file') {
-            responseText += `[Image Generated: ${content.image_file.file_id}]\n(Images not yet supported in UI)\n`;
+            // responseText += `[Image Generated: ${content.image_file.file_id}]\n(Images not yet supported in UI)\n`;
           }
         }
       }
+
+      // Remove OpenAI citations (e.g. 【28:0†source】)
+      responseText = responseText.replace(/【.*?†source】/g, '').trim();
 
       console.log(`✅ Assistant Response: ${responseText.substring(0, 50)}...`);
       return NextResponse.json({ answer: responseText || "No response generated." });

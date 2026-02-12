@@ -7,7 +7,6 @@ import {
   PanelLeft, User, LogOut, MoreVertical, Trash2, Edit3, X, Download, Eye, Check,
   Folder, FolderPlus, ArrowLeft, Lock
 } from 'lucide-react';
-import { SplineSceneBasic } from "@/components/ui/spline-scene-basic";
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +50,7 @@ const BetsyDashboard = () => {
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null);
   const [csvData, setCsvData] = useState<string[][] | null>(null);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [isViewingDocs, setIsViewingDocs] = useState(false);
 
   // Project State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -97,8 +97,22 @@ const BetsyDashboard = () => {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) console.error('Error fetching projects:', error);
-    else setProjects(data || []);
+    if (error) {
+      console.error('Error fetching projects:', error);
+    } else {
+      const projectsList = data || [];
+      setProjects(projectsList);
+
+      // Auto-select latest project if available and none selected
+      if (projectsList.length > 0 && !activeProject) {
+        const latestProject = projectsList[0];
+        setActiveProject(latestProject);
+        // Load documents for the project
+        await fetchDocuments(latestProject.id);
+        // Load conversation context for the project
+        await createOrLoadConversation(latestProject);
+      }
+    }
   };
 
   const fetchDocuments = async (projectId?: string) => {
@@ -141,12 +155,16 @@ const BetsyDashboard = () => {
       // Selecting new project clears docs and loads context
       setDocuments([]);
       setActiveDoc(null);
+      
+      // Initialize conversation for the new project
+      setMessages([]);
+      await createOrLoadConversation(data);
     }
   };
 
-  const createOrLoadConversation = async () => {
+  const createOrLoadConversation = async (project: Project | null = activeProject) => {
     try {
-      if (!activeProject) return null;
+      if (!project) return null;
 
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       const userId = currentSession?.user?.id;
@@ -155,7 +173,7 @@ const BetsyDashboard = () => {
       const { data: existingConversations } = await supabase
         .from('conversations')
         .select('id')
-        .eq('project_id', activeProject.id)
+        .eq('project_id', project.id)
         .order('updated_at', { ascending: false })
         .limit(1);
 
@@ -169,9 +187,9 @@ const BetsyDashboard = () => {
         const { data: newConversation, error: createError } = await supabase
           .from('conversations')
           .insert({
-            title: `${activeProject.name} Chat`,
+            title: `${project.name} Chat`,
             user_id: userId,
-            project_id: activeProject.id
+            project_id: project.id
           })
           .select()
           .single();
@@ -412,13 +430,7 @@ const BetsyDashboard = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || !activeProject) return;
-
-    // Ensure we have a conversation for this project
-    let conversationId = currentConversationId;
-    if (!conversationId) {
-      conversationId = await createOrLoadConversation();
-    }
+    if (!chatInput.trim()) return;
 
     // Add user message
     const newMsg = { role: 'user' as const, content: chatInput };
@@ -426,6 +438,22 @@ const BetsyDashboard = () => {
 
     const currentInput = chatInput;
     setChatInput('');
+    
+    if (!activeProject) {
+        setIsAiThinking(true);
+        setTimeout(() => {
+            setMessages(prev => [...prev, { role: 'ai', content: "Please create a project to start chatting, as there is no context available." }]);
+            setIsAiThinking(false);
+        }, 600);
+        return;
+    }
+
+    // Ensure we have a conversation for this project
+    let conversationId = currentConversationId;
+    if (!conversationId) {
+      conversationId = await createOrLoadConversation();
+    }
+
     setIsAiThinking(true);
 
     // Save user message to database (if available)
@@ -743,29 +771,31 @@ const BetsyDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full bg-[#050505] items-center justify-center text-white">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      <div className="flex h-screen w-full bg-slate-50 items-center justify-center text-slate-900">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="flex h-screen w-full bg-[#050505] items-center justify-center text-white p-4">
-        <div className="w-full max-w-md space-y-8 bg-white/5 p-8 rounded-2xl border border-white/10 backdrop-blur-xl animate-in fade-in zoom-in duration-300">
+      <div className="flex h-screen w-full bg-slate-50 items-center justify-center text-slate-900 p-4">
+        <div className="w-full max-w-md space-y-8 bg-white p-8 rounded-2xl border border-slate-200 shadow-xl animate-in fade-in zoom-in duration-300">
           <div className="text-center">
-            <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-              {isSignUp ? 'Create an Account' : 'Welcome to Betsy'}
-            </h2>
-            <p className="mt-2 text-sm text-slate-400">
-              {isSignUp ? 'Get started with your semantic dashboard' : 'Access your secured semantic dashboard'}
-            </p>
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/20">
+                B
+              </div>
+              <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+                {isSignUp ? 'Create an Account' : 'Welcome to Betsy'}
+              </h2>
+            </div>
           </div>
 
           <div className="space-y-4">
             <form onSubmit={handleAuth} className="space-y-4">
               {authError && (
-                <div className="p-3 text-xs text-red-200 bg-red-900/20 border border-red-900/50 rounded-md">
+                <div className="p-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md">
                   {authError}
                 </div>
               )}
@@ -774,7 +804,7 @@ const BetsyDashboard = () => {
                 {isSignUp && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="firstName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">First Name</label>
+                      <label htmlFor="firstName" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">First Name</label>
                       <input
                         id="firstName"
                         name="firstName"
@@ -782,11 +812,11 @@ const BetsyDashboard = () => {
                         required
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
-                        className="block w-full rounded-md border-0 bg-white/5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 pl-3 transition-shadow"
+                        className="block w-full rounded-md border-0 bg-slate-50 py-2 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 pl-3 transition-shadow"
                       />
                     </div>
                     <div>
-                      <label htmlFor="lastName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Last Name</label>
+                      <label htmlFor="lastName" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Last Name</label>
                       <input
                         id="lastName"
                         name="lastName"
@@ -794,14 +824,14 @@ const BetsyDashboard = () => {
                         required
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
-                        className="block w-full rounded-md border-0 bg-white/5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 pl-3 transition-shadow"
+                        className="block w-full rounded-md border-0 bg-slate-50 py-2 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 pl-3 transition-shadow"
                       />
                     </div>
                   </div>
                 )}
 
                 <div>
-                  <label htmlFor="email" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Email address</label>
+                  <label htmlFor="email" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Email address</label>
                   <input
                     id="email"
                     name="email"
@@ -810,12 +840,12 @@ const BetsyDashboard = () => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="block w-full rounded-md border-0 bg-white/5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 pl-3 transition-shadow"
+                    className="block w-full rounded-md border-0 bg-slate-50 py-2 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 pl-3 transition-shadow"
                     placeholder="name@company.com"
                   />
                 </div>
                 <div>
-                  <label htmlFor="password" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Password</label>
+                  <label htmlFor="password" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Password</label>
                   <input
                     id="password"
                     name="password"
@@ -824,7 +854,7 @@ const BetsyDashboard = () => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full rounded-md border-0 bg-white/5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 pl-3 transition-shadow"
+                    className="block w-full rounded-md border-0 bg-slate-50 py-2 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 pl-3 transition-shadow"
                     placeholder="••••••••"
                   />
                 </div>
@@ -847,7 +877,7 @@ const BetsyDashboard = () => {
               <button
                 type="button"
                 onClick={() => setIsSignUp(!isSignUp)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-xs text-indigo-600 hover:text-indigo-500 transition-colors"
               >
                 {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
               </button>
@@ -859,30 +889,30 @@ const BetsyDashboard = () => {
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden">
+    <div className="flex h-screen w-full bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden">
 
       {/* LEFT SIDEBAR: KNOWLEDGE BASE */}
       <aside className={cn(
-        "border-r border-white/10 bg-black/95 md:bg-black/40 backdrop-blur-xl flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
+        "border-r border-slate-200 bg-white flex flex-col transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden",
         "fixed inset-y-0 left-0 z-[60] h-full md:relative md:translate-x-0",
         isLeftSidebarOpen
-          ? "w-72 translate-x-0 opacity-100 shadow-2xl"
+          ? "w-72 translate-x-0 opacity-100 shadow-xl"
           : "-translate-x-full w-72 opacity-0 md:w-0 md:translate-x-0 md:opacity-0 md:border-0"
       )}>
-        <div className="p-6 border-b border-white/10 flex items-center gap-2">
+        <div className="p-6 border-b border-slate-200 flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white">B</div>
-          <h1 className="text-xl font-semibold tracking-tight">Betsy AI</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Betsy AI</h1>
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto space-y-6">
-          {!activeProject ? (
-            // Project List View
+          {!isViewingDocs || !activeProject ? (
+            // Project List View (Default)
             <div className="space-y-4">
               <div className="flex items-center justify-between px-2">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Your Projects</p>
                 <button
                   onClick={() => setIsCreatingProject(true)}
-                  className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
                   title="New Project"
                 >
                   <FolderPlus size={16} />
@@ -900,7 +930,7 @@ const BetsyDashboard = () => {
                     >
                       {renamingProjectId === p.id ? (
                         // Rename Input
-                        <div className="flex items-center gap-2 p-3 bg-white/5 rounded-xl border border-indigo-500/30">
+                        <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-indigo-200">
                           <input
                             type="text"
                             value={newProjectRename}
@@ -912,13 +942,13 @@ const BetsyDashboard = () => {
                                 setNewProjectRename('');
                               }
                             }}
-                            className="flex-1 bg-transparent text-white text-sm outline-none"
+                            className="flex-1 bg-transparent text-slate-900 text-sm outline-none"
                             placeholder="New project name"
                             autoFocus
                           />
                           <button
                             onClick={() => handleRenameProject(p.id)}
-                            className="p-1.5 hover:bg-emerald-500/20 rounded text-emerald-400"
+                            className="p-1.5 hover:bg-emerald-500/20 rounded text-emerald-600"
                           >
                             <Check size={14} />
                           </button>
@@ -927,33 +957,74 @@ const BetsyDashboard = () => {
                               setRenamingProjectId(null);
                               setNewProjectRename('');
                             }}
-                            className="p-1.5 hover:bg-red-500/20 rounded text-red-400"
+                            className="p-1.5 hover:bg-red-500/20 rounded text-red-500"
                           >
                             <X size={14} />
                           </button>
                         </div>
                       ) : (
                         // Normal Project Item
-                        <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-slate-300 text-sm transition-all border border-transparent hover:border-white/10">
+                        <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-100 text-slate-600 text-sm transition-all border border-transparent hover:border-slate-200">
                           <button
                             onClick={async () => {
-                              setActiveProject(p);
-                              setDocuments([]);
-                              setActiveDoc(null);
-                              setMessages([]);
-                              await fetchDocuments(p.id);
-                              await createOrLoadConversation();
+                              // If this project is already active and we're clicking it again,
+                              // maybe toggle the docs view or do nothing?
+                              // For now, let's select it and stay on the list view (chat enabled).
+                              if (activeProject?.id !== p.id) {
+                                setActiveProject(p);
+                                setDocuments([]);
+                                setActiveDoc(null);
+                                setMessages([]);
+                                await fetchDocuments(p.id);
+                                await createOrLoadConversation(p);
+                              }
+                              setIsViewingDocs(false); // Stay on list view
                             }}
-                            className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                            className={cn(
+                              "flex items-center gap-3 flex-1 min-w-0 text-left p-2 rounded-lg transition-colors group",
+                              activeProject?.id === p.id 
+                                ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200" 
+                                : "hover:bg-slate-50 border border-transparent hover:border-slate-200"
+                            )}
                           >
-                            <Folder size={18} className="text-indigo-500/80 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+                            <div 
+                              className={cn(
+                                "flex-shrink-0 transition-colors p-1.5 rounded-lg",
+                                activeProject?.id === p.id ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400 group-hover:text-indigo-500"
+                              )}
+                            >
+                              <Folder size={16} />
+                            </div>
+                            
                             <div className="flex-1 min-w-0">
-                              <span className="block truncate font-medium text-white group-hover:text-indigo-200">{p.name}</span>
-                              <span className="block text-[10px] text-slate-500 truncate">
+                              <span className={cn(
+                                "block truncate font-medium text-sm",
+                                activeProject?.id === p.id ? "text-indigo-900" : "text-slate-700"
+                              )}>
+                                {p.name}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 truncate mt-0.5">
                                 {new Date(p.created_at).toLocaleDateString()}
                               </span>
                             </div>
-                            <ChevronRight size={14} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+
+                            {/* Manage Files Button (Separate Hit Area) */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveProject(p);
+                                if (activeProject?.id !== p.id) {
+                                   setMessages([]);
+                                   createOrLoadConversation(p);
+                                }
+                                fetchDocuments(p.id);
+                                setIsViewingDocs(true);
+                              }}
+                              className="p-1.5 hover:bg-slate-200 rounded-md transition-all opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 flex-shrink-0"
+                              title="Manage Files"
+                            >
+                                <ChevronRight size={14} />
+                            </div>
                           </button>
 
                           {/* Three-dot Menu */}
@@ -963,13 +1034,16 @@ const BetsyDashboard = () => {
                                 e.stopPropagation();
                                 setOpenMenuProjectId(openMenuProjectId === p.id ? null : p.id);
                               }}
-                              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                              className={cn(
+                                "p-1.5 hover:bg-slate-200 rounded-lg transition-colors",
+                                openMenuProjectId === p.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                              )}
                             >
                               <MoreVertical size={14} className="text-slate-400" />
                             </button>
 
                             {openMenuProjectId === p.id && (
-                              <div className="absolute right-0 top-8 z-30 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl overflow-hidden min-w-[140px]">
+                              <div className="absolute right-0 top-8 z-30 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden min-w-[140px]">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -977,9 +1051,9 @@ const BetsyDashboard = () => {
                                     setNewProjectRename(p.name);
                                     setOpenMenuProjectId(null);
                                   }}
-                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
                                 >
-                                  <Edit3 size={12} className="text-indigo-400" />
+                                  <Edit3 size={12} className="text-indigo-600" />
                                   Rename
                                 </button>
                                 <button
@@ -987,7 +1061,7 @@ const BetsyDashboard = () => {
                                     e.stopPropagation();
                                     handleDeleteProject(p.id);
                                   }}
-                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
                                 >
                                   <Trash2 size={12} />
                                   Delete
@@ -1007,23 +1081,20 @@ const BetsyDashboard = () => {
             <div className="space-y-4">
               <button
                 onClick={() => {
-                  setActiveProject(null);
-                  setDocuments([]);
-                  setActiveDoc(null);
-                  setMessages([]);
-                  setCurrentConversationId(null);
+                  setIsViewingDocs(false);
+                  // Don't clear activeProject, just return to list
                 }}
-                className="flex items-center gap-2 text-xs text-slate-400 hover:text-white px-2 mb-4 hover:bg-white/5 py-1.5 rounded-lg transition-colors w-fit"
+                className="flex items-center gap-2 text-xs text-slate-500 hover:text-indigo-600 px-2 mb-4 hover:bg-slate-100 py-1.5 rounded-lg transition-colors w-fit"
               >
                 <ArrowLeft size={14} /> Back to Projects
               </button>
 
-              <div className="px-3 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl mb-6">
-                <div className="flex items-center gap-2 text-indigo-400 mb-1">
+              <div className="px-3 py-3 bg-indigo-50 border border-indigo-100 rounded-xl mb-6">
+                <div className="flex items-center gap-2 text-indigo-600 mb-1">
                   <Lock size={12} />
                   <span className="text-[10px] font-bold uppercase tracking-widest">Active Project</span>
                 </div>
-                <h3 className="font-semibold text-white truncate text-sm">{activeProject.name}</h3>
+                <h3 className="font-semibold text-slate-900 truncate text-sm">{activeProject.name}</h3>
               </div>
 
                 <div className="space-y-2">
@@ -1038,12 +1109,12 @@ const BetsyDashboard = () => {
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-white/20 bg-white/5 hover:bg-white/10 transition-all text-sm group disabled:opacity-50"
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 hover:border-indigo-300 transition-all text-sm group disabled:opacity-50 text-slate-600"
                   >
                     {uploading ? (
-                      <Loader2 size={18} className="animate-spin text-indigo-400" />
+                      <Loader2 size={18} className="animate-spin text-indigo-600" />
                     ) : (
-                      <UploadCloud size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
+                      <UploadCloud size={18} className="text-indigo-500 group-hover:scale-110 transition-transform" />
                     )}
                     <span>{uploading ? 'Uploading...' : 'Upload Document'}</span>
                   </button>
@@ -1061,16 +1132,16 @@ const BetsyDashboard = () => {
                             key={doc.id}
                             className={cn(
                               "flex items-center gap-3 p-2 rounded-lg transition-colors text-sm relative group",
-                              "hover:bg-white/5 text-slate-400",
-                              openMenuDocId === doc.id && "z-20 bg-white/5 ring-1 ring-white/10"
+                              "hover:bg-slate-100 text-slate-500",
+                              openMenuDocId === doc.id && "z-20 bg-slate-100 ring-1 ring-slate-200"
                             )}
                           >
                             {/* Document Info (Non-clickable, just visual inventory) */}
                             <div className="flex items-center gap-3 flex-1 min-w-0">
-                              {doc.file_type === 'pdf' ? <FileText size={16} className="text-indigo-400" /> : <Table size={16} className="text-emerald-400" />}
+                              {doc.file_type === 'pdf' ? <FileText size={16} className="text-indigo-600" /> : <Table size={16} className="text-emerald-600" />}
                               <div className="flex-1 min-w-0">
-                                <span className="block truncate text-slate-300">{doc.filename}</span>
-                                <span className="text-[10px] text-slate-600">
+                                <span className="block truncate text-slate-700 font-medium">{doc.filename}</span>
+                                <span className="text-[10px] text-slate-400">
                                   {doc.file_type?.toUpperCase()} • {new Date(doc.created_at).toLocaleDateString()}
                                 </span>
                               </div>
@@ -1084,7 +1155,7 @@ const BetsyDashboard = () => {
                                   e.stopPropagation();
                                   handlePreviewDocument(doc);
                                 }}
-                                className="p-2 rounded-md hover:bg-white/10 text-slate-500 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                                className="p-2 rounded-md hover:bg-white text-slate-400 hover:text-indigo-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
                                 title="Preview Document"
                               >
                                 <Eye size={16} />
@@ -1097,7 +1168,7 @@ const BetsyDashboard = () => {
                                     e.stopPropagation();
                                     setOpenMenuDocId(openMenuDocId === doc.id ? null : doc.id);
                                   }}
-                                  className="p-2 rounded-md hover:bg-white/10 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
+                                  className="p-2 rounded-md hover:bg-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 touch-manipulation"
                                   aria-label="More options"
                                 >
                                   <MoreVertical size={16} className="text-slate-400" />
@@ -1160,13 +1231,13 @@ const BetsyDashboard = () => {
           <div className="relative">
             <button
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="w-full flex items-center gap-3 px-2 py-2 mb-1 rounded-xl hover:bg-white/5 transition-colors text-left group"
+              className="w-full flex items-center gap-3 px-2 py-2 mb-1 rounded-xl hover:bg-slate-200 transition-colors text-left group"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-indigo-500/20 ring-1 ring-white/20">
-                {session?.user?.email?.charAt(0).toUpperCase() || 'U'}
+                {session?.user?.user_metadata?.first_name?.charAt(0).toUpperCase() || session?.user?.email?.charAt(0).toUpperCase() || 'U'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate group-hover:text-indigo-300 transition-colors">
+                <p className="text-sm font-medium text-slate-900 truncate group-hover:text-indigo-700 transition-colors">
                   {session?.user?.user_metadata?.first_name || 'User'}
                 </p>
                 <p className="text-[10px] text-slate-500 truncate">
@@ -1183,14 +1254,14 @@ const BetsyDashboard = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setIsProfileOpen(false)}
                 />
-                <div className="absolute bottom-full left-0 w-full mb-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-xl overflow-hidden z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-20 animate-in slide-in-from-bottom-2 fade-in duration-200">
                   <div className="p-1 space-y-0.5">
 
                     <button
                       onClick={() => supabase.auth.signOut()}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs group"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:text-red-600 hover:bg-red-50 transition-all text-xs group"
                     >
-                      <LogOut size={14} className="group-hover:text-red-400 transition-colors" />
+                      <LogOut size={14} className="group-hover:text-red-500 transition-colors" />
                       <span>Sign Out</span>
                     </button>
                   </div>
@@ -1204,17 +1275,17 @@ const BetsyDashboard = () => {
       {/* Mobile Backdrop */}
       {isLeftSidebarOpen && (
         <div
-          className="md:hidden fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          className="md:hidden fixed inset-0 z-[55] bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setIsLeftSidebarOpen(false)}
         />
       )}
 
       {/* CENTER: SEMANTIC CHAT */}
-      <main className="flex-1 flex flex-col bg-[#080808] relative">
+      <main className="flex-1 flex flex-col bg-white relative">
         <div className="absolute top-4 left-4 z-50">
           <button
             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors border border-white/5"
+            className="p-2 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors shadow-sm"
           >
             <PanelLeft size={16} />
           </button>
@@ -1223,25 +1294,18 @@ const BetsyDashboard = () => {
 
         <div className="flex-1 overflow-y-auto px-4 pb-4 pt-14 md:p-8 space-y-8 scrollbar-hide">
 
-          {/* Integrated 3D Scene */}
-          <div className="w-full max-w-4xl mx-auto mb-8">
-            <SplineSceneBasic
-              isCard={false}
-              showStatus={false}
-              className="h-48 md:h-64"
-              title={
-                <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                  Welcome, {session.user.user_metadata?.first_name || session.user.email?.split('@')[0]}
-                </h1>
-              }
-              description={
-                <p className="mt-2 text-slate-400 text-sm max-w-md">
-                  {activeProject
-                    ? `Ask questions about all documents in "${activeProject.name}"`
-                    : "Select a project to start chatting with your documents."}
-                </p>
-              }
-            />
+          {/* Integrated Header (No 3D Scene) */}
+          <div className="w-full max-w-4xl mx-auto mb-8 p-6 md:p-8 relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-slate-200">
+            <div className="relative z-10">
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+                Welcome, {session.user.user_metadata?.first_name || session.user.email?.split('@')[0]}
+              </h1>
+              <p className="mt-2 text-slate-500 text-sm max-w-md">
+                {activeProject
+                  ? `Ask questions about all documents in "${activeProject.name}"`
+                  : "Select a project to start chatting with your documents."}
+              </p>
+            </div>
           </div>
 
           {/* Chat Messages */}
@@ -1256,21 +1320,21 @@ const BetsyDashboard = () => {
               >
                 <div className={cn(
                   "w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold",
-                  msg.role === 'ai' ? "bg-indigo-600" : "bg-slate-700"
+                  msg.role === 'ai' ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-600"
                 )}>
-                  {msg.role === 'ai' ? 'AI' : 'U'}
+                  {msg.role === 'ai' ? 'AI' : (session?.user?.user_metadata?.first_name?.charAt(0).toUpperCase() || session?.user?.email?.charAt(0).toUpperCase() || 'U')}
                 </div>
                 <div className={cn(
                   "space-y-2 max-w-[70%]",
                   msg.role === 'user' ? "items-end" : "items-start"
                 )}>
                   <div className={cn(
-                    "px-4 py-3 rounded-2xl",
+                    "px-4 py-3 rounded-2xl shadow-sm",
                     msg.role === 'ai'
-                      ? "bg-white/5 border border-white/10 text-slate-300"
+                      ? "bg-white border border-slate-200 text-slate-800"
                       : "bg-indigo-600 text-white"
                   )}>
-                    <div className="leading-relaxed text-sm [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>p]:mb-2 last:[&>p]:mb-0 [&>strong]:font-bold [&>strong]:text-indigo-300 [&>table]:w-full [&>table]:border-collapse [&>th]:border-b [&>th]:border-white/20 [&>th]:text-left [&>th]:p-2 [&>td]:p-2 [&>td]:border-b [&>td]:border-white/10">
+                    <div className="leading-relaxed text-sm [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>p]:mb-2 last:[&>p]:mb-0 [&>strong]:font-bold [&>strong]:text-indigo-600 [&>table]:w-full [&>table]:border-collapse [&>th]:border-b [&>th]:border-slate-200 [&>th]:text-left [&>th]:p-2 [&>td]:p-2 [&>td]:border-b [&>td]:border-slate-100">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {msg.content}
                       </ReactMarkdown>
@@ -1283,13 +1347,13 @@ const BetsyDashboard = () => {
             {/* Thinking Indicator */}
             {isAiThinking && (
               <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300 flex-row">
-                <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold bg-indigo-600">
+                <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-semibold bg-indigo-600 text-white">
                   AI
                 </div>
                 <div className="items-start space-y-2 max-w-[70%]">
-                  <div className="px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-slate-300">
-                    <div className="flex items-center gap-2 text-sm text-slate-400">
-                      <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                  <div className="px-4 py-3 rounded-2xl bg-white border border-slate-200 text-slate-800 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
                       <span className="italic">Betsy is thinking...</span>
                     </div>
                   </div>
@@ -1318,20 +1382,19 @@ const BetsyDashboard = () => {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder={activeProject ? `Ask anything about "${activeProject.name}" documents...` : "Select a project to start chatting..."}
-              disabled={!activeProject}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 pr-14 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder={activeProject ? `Ask anything about "${activeProject.name}" documents...` : "Type a message..."}
+              className="w-full bg-white border border-slate-200 rounded-2xl p-4 pl-12 pr-14 text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-lg text-slate-900 placeholder:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
             />
 
             {/* Upload Button in Input */}
             <button
               onClick={() => chatFileInputRef.current?.click()}
               disabled={uploading}
-              className="absolute left-3 top-2.5 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50"
+              className="absolute left-3 top-2.5 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
               title="Upload Document"
             >
               {uploading ? (
-                <Loader2 size={18} className="animate-spin text-indigo-400" />
+                <Loader2 size={18} className="animate-spin text-indigo-600" />
               ) : (
                 <UploadCloud size={18} />
               )}
@@ -1339,8 +1402,8 @@ const BetsyDashboard = () => {
 
             <button
               onClick={handleSendMessage}
-              disabled={!chatInput.trim() || !activeProject}
-              className="absolute right-3 top-2.5 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors disabled:bg-slate-700 disabled:opacity-50"
+              disabled={!chatInput.trim()}
+              className="absolute right-3 top-2.5 p-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors disabled:bg-slate-300 disabled:opacity-50"
             >
               <Send size={18} className="text-white" />
             </button>
@@ -1359,17 +1422,17 @@ const BetsyDashboard = () => {
           }}
         >
           <div
-            className="bg-black/95 border border-white/20 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
+            className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Create New Project</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Create New Project</h3>
               <button
                 onClick={() => {
                   setIsCreatingProject(false);
                   setNewProjectName('');
                 }}
-                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+                className="p-1 rounded-md hover:bg-slate-100 transition-colors"
               >
                 <X size={18} className="text-slate-400" />
               </button>
@@ -1377,7 +1440,7 @@ const BetsyDashboard = () => {
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="projectName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                <label htmlFor="projectName" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
                   Project Name
                 </label>
                 <input
@@ -1390,7 +1453,7 @@ const BetsyDashboard = () => {
                       handleCreateProject();
                     }
                   }}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                   placeholder="e.g. Q1 Marketing Campaign"
                   autoFocus
                 />
@@ -1402,7 +1465,7 @@ const BetsyDashboard = () => {
                     setIsCreatingProject(false);
                     setNewProjectName('');
                   }}
-                  className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1429,17 +1492,17 @@ const BetsyDashboard = () => {
           }}
         >
           <div
-            className="bg-black/95 border border-white/20 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
+            className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Rename Document</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Rename Document</h3>
               <button
                 onClick={() => {
                   setRenamingDocId(null);
                   setNewDocName('');
                 }}
-                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+                className="p-1 rounded-md hover:bg-slate-100 transition-colors"
               >
                 <X size={18} className="text-slate-400" />
               </button>
@@ -1447,7 +1510,7 @@ const BetsyDashboard = () => {
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="docName" className="block text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">
+                <label htmlFor="docName" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
                   New Name
                 </label>
                 <input
@@ -1460,7 +1523,7 @@ const BetsyDashboard = () => {
                       handleRenameDocument(renamingDocId);
                     }
                   }}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                   placeholder="Enter new document name..."
                   autoFocus
                 />
@@ -1472,7 +1535,7 @@ const BetsyDashboard = () => {
                     setRenamingDocId(null);
                     setNewDocName('');
                   }}
-                  className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1496,27 +1559,27 @@ const BetsyDashboard = () => {
           onClick={() => setPreviewDoc(null)}
         >
           <div
-            className="bg-black/95 border border-white/20 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 m-4"
+            className="bg-white border border-slate-200 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 m-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
               <div className="flex items-center gap-3">
-                {previewDoc.file_type === 'pdf' ? <FileText size={20} className="text-indigo-400" /> : <Table size={20} className="text-emerald-400" />}
-                <h3 className="text-lg font-semibold text-white truncate max-w-md">{previewDoc.filename}</h3>
+                {previewDoc.file_type === 'pdf' ? <FileText size={20} className="text-indigo-600" /> : <Table size={20} className="text-emerald-600" />}
+                <h3 className="text-lg font-semibold text-slate-900 truncate max-w-md">{previewDoc.filename}</h3>
               </div>
               <div className="flex items-center gap-2">
                 <a
                   href={previewDoc.file_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors mr-1"
+                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors mr-1"
                   title="Download / Open Original"
                 >
                   <Download size={20} />
                 </a>
                 <button
                   onClick={() => setPreviewDoc(null)}
-                  className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
                   title="Close"
                 >
                   <X size={20} />
@@ -1524,7 +1587,7 @@ const BetsyDashboard = () => {
               </div>
             </div>
 
-            <div className="flex-1 bg-white/5 relative overflow-hidden rounded-b-2xl">
+            <div className="flex-1 bg-slate-50 relative overflow-hidden rounded-b-2xl">
               {previewDoc.file_type === 'pdf' ? (
                 <iframe
                   src={previewDoc.file_url}
@@ -1569,17 +1632,17 @@ const BetsyDashboard = () => {
                       </table>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
-                        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
                         <p>Loading CSV Preview...</p>
                       </div>
                     )}
                   </div>
               ) : (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes((previewDoc.file_type || '').toLowerCase())) ? (
-                <div className="w-full h-full flex items-center justify-center p-4 bg-black/40">
+                <div className="w-full h-full flex items-center justify-center p-4 bg-slate-100">
                   <img
                     src={previewDoc.file_url}
                     alt={previewDoc.filename}
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
                   />
                 </div>
               ) : (['txt', 'md', 'json', 'xml', 'js', 'ts', 'jsx', 'tsx', 'css', 'html', 'sql', 'py', 'java', 'c', 'cpp'].includes((previewDoc.file_type || '').toLowerCase())) ? (
@@ -1591,8 +1654,8 @@ const BetsyDashboard = () => {
                   />
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4 p-8">
-                  <Table size={48} className="text-slate-600" />
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-4 p-8">
+                  <Table size={48} className="text-slate-400" />
                   <p>Preview not available for this file type.</p>
                   <a
                     href={previewDoc.file_url}

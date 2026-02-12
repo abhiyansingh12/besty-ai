@@ -39,6 +39,15 @@ export async function POST(req: NextRequest) {
 
     console.log(`📄 Ingesting document: ${documentId}, path: ${storagePath}`);
 
+    // Fetch original filename from DB to ensure OpenAI sees the correct name
+    const { data: docMeta } = await supabase
+      .from('documents')
+      .select('filename')
+      .eq('id', documentId)
+      .single();
+    
+    const originalName = docMeta?.filename || path.basename(storagePath);
+
     // 1. Download file from Storage
     const { data: fileBlob, error: downloadError } = await supabase.storage
       .from('documents')
@@ -51,10 +60,17 @@ export async function POST(req: NextRequest) {
 
     // 2. Upload to OpenAI Files
     const buffer = Buffer.from(await fileBlob.arrayBuffer());
-    const tempFilePath = path.join(tmpdir(), `upload_${documentId}_${path.basename(storagePath)}`);
+    
+    // Create a unique temp directory to preserve the original filename
+    const uniqueDir = path.join(tmpdir(), `ingest_${documentId}_${Date.now()}`);
+    if (!fs.existsSync(uniqueDir)) {
+      fs.mkdirSync(uniqueDir);
+    }
+    
+    const tempFilePath = path.join(uniqueDir, originalName);
     fs.writeFileSync(tempFilePath, buffer);
 
-    console.log(`📤 Uploading to OpenAI: ${path.basename(storagePath)}`);
+    console.log(`📤 Uploading to OpenAI: ${originalName}`);
 
     const openAIFile = await openai.files.create({
       file: fs.createReadStream(tempFilePath),
@@ -63,8 +79,13 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ OpenAI File ID: ${openAIFile.id}`);
 
-    // Cleanup temp file
-    fs.unlinkSync(tempFilePath);
+    // Cleanup temp file and directory
+    try {
+      fs.unlinkSync(tempFilePath);
+      fs.rmdirSync(uniqueDir);
+    } catch (cleanupError) {
+      console.warn("Failed to cleanup temp files:", cleanupError);
+    }
 
     // NEW LOGIC: Pre-load into Python Service if Excel/CSV
     // This allows deterministic extraction of summaries and faster querying
@@ -191,7 +212,7 @@ export async function POST(req: NextRequest) {
             threadId,
             {
               role: "user",
-              content: `System: File '${path.basename(storagePath)}' has been uploaded to the workspace.`,
+              content: `System: File '${originalName}' has been uploaded to the workspace.`,
               attachments: [
                 { file_id: openAIFile.id, tools: fileTools }
               ]

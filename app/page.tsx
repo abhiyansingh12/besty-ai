@@ -1,30 +1,36 @@
 'use client';
 
 import Link from 'next/link';
-import { SplineSceneBasic } from "@/components/ui/spline-scene-basic";
+import Image from 'next/image';
 import { ArrowRight } from 'lucide-react'; 
+import { Spotlight } from "@/components/ui/spotlight";
 
 export default function LandingPage() {
   return (
-    <main className="flex min-h-screen flex-col bg-black text-white selection:bg-indigo-500/30">
+    <main className="h-screen w-full flex flex-col bg-slate-50 text-slate-900 overflow-hidden relative selection:bg-indigo-100 selection:text-indigo-900">
       
+      <Spotlight
+        className="-top-40 left-0 md:left-60 md:-top-20 opacity-20"
+        fill="#4f46e5"
+      />
+
       {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
+      <nav className="w-full z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl shrink-0">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white">B</div>
-            <span>Betsy AI</span>
+            <span className="text-slate-900">Betsy AI</span>
           </div>
           <div className="flex items-center gap-4">
              <Link 
                href="/dashboard"
-               className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+               className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
              >
                Sign In
              </Link>
              <Link 
                href="/dashboard"
-               className="px-4 py-2 bg-white text-black text-sm font-semibold rounded-lg hover:bg-slate-200 transition-colors"
+               className="px-4 py-2 bg-slate-200 text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-300 transition-colors"
              >
                Get Started
              </Link>
@@ -32,54 +38,59 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="flex-1 flex flex-col pt-16 md:pt-32 pb-8 md:pb-20 px-6">
-        <div className="container mx-auto max-w-6xl space-y-6 md:space-y-12">
+      {/* Main Content - No Scroll */}
+      <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-0 overflow-y-auto md:overflow-hidden">
+        <div className="w-full max-w-7xl flex flex-col items-center gap-2 md:gap-12 h-full justify-center py-4 md:py-0">
           
-          {/* Reusing the Spline Scene with Custom Landing Copy */}
-          <div className="w-full">
-            <SplineSceneBasic 
-              title={
-                <h1 className="text-4xl md:text-7xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-neutral-400 text-center md:text-left">
-                  Business Intelligence <br />
-                  <span className="text-indigo-500">Reimagined.</span>
-                </h1>
-              }
-              description={
-                <div className="mt-6 max-w-xl space-y-6 mx-auto md:mx-0">
-                  <p className="text-lg text-slate-400 leading-relaxed text-center md:text-left">
-                    Betsy AI transforms your raw data into actionable strategic insights. 
-                    Upload documents, ask questions, and get semantic answers instantly.
-                  </p>
-                  <div className="flex flex-wrap gap-4 justify-center md:justify-start">
-                    <Link href="/dashboard" className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 px-8 font-medium text-white transition-all duration-300 hover:bg-indigo-500 hover:scale-105 hover:shadow-[0_0_20px_rgba(79,70,229,0.4)]">
-                      <span className="flex items-center gap-2">
-                        Launch Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                      </span>
-                    </Link>
+          {/* Title - Top Centered */}
+          <h1 className="text-3xl md:text-6xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-slate-900 via-slate-800 to-slate-500 text-center shrink-0 leading-tight md:leading-tight pb-2">
+            Business Intelligence <br />
+            <span className="text-indigo-600">Reimagined.</span>
+          </h1>
 
-                  </div>
-                </div>
-              }
-              showStatus={false} // Hide the "System Active" status for cleaner landing look
-              isCard={false} // No box border/background for landing page
-            />
-          </div>
-
-          {/* Footer */}
-          <div className="mt-6 md:mt-24 pt-6 md:pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6 text-xs md:text-sm text-slate-500">
-            <div className="flex items-center gap-3 md:gap-4">
-              <p className="font-bold text-slate-300">Betsy AI</p>
-              <span className="text-slate-600 text-[10px] md:text-xs border-l border-white/10 pl-3 md:pl-4">&copy; 2026 All rights reserved.</span>
+          {/* Content Area - Split Layout */}
+          <div className="flex flex-col md:flex-row items-center gap-6 md:gap-16 w-full justify-center flex-1 min-h-0">
+            
+            {/* Image Area - Left Side */}
+            <div className="relative w-full md:w-3/5 flex items-center justify-center h-[35vh] md:h-full md:max-h-[60vh] shrink-0 md:shrink">
+               <div className="relative w-full h-full">
+                  <Image 
+                    src="/landing-organization.png" 
+                    alt="Betsy AI organizing files" 
+                    fill
+                    className="object-contain"
+                    priority
+                  />
+               </div>
             </div>
-            <div className="flex gap-4 md:gap-6">
-              <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
-              <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
-            </div>
-          </div>
 
+            {/* Text & CTA - Right Side */}
+            <div className="flex flex-col items-center md:items-start gap-6 md:gap-8 shrink-0 max-w-xl text-center md:text-left md:w-2/5 pb-4 md:pb-0">
+               <p className="text-sm md:text-lg text-slate-600 leading-relaxed px-4 md:px-0">
+                 Betsy AI understands your files and turns raw data into clear, actionable insights. Upload any file, ask questions, and get answers instantly.
+               </p>
+               
+               <Link href="/dashboard" className="group relative inline-flex h-10 md:h-12 items-center justify-center overflow-hidden rounded-xl bg-indigo-600 px-6 md:px-8 font-medium text-white transition-all duration-300 hover:bg-indigo-500 hover:scale-105 hover:shadow-[0_0_20px_rgba(79,70,229,0.2)]">
+                  <span className="flex items-center gap-2 text-sm md:text-base">
+                    Launch Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                  </span>
+               </Link>
+            </div>
+
+          </div>
         </div>
-      </section>
+      </div>
+
+      {/* Minimal Footer */}
+      <div className="w-full border-t border-slate-200 bg-white/50 backdrop-blur-sm py-2 md:py-3 shrink-0">
+        <div className="container mx-auto px-6 flex items-center justify-between text-[10px] md:text-xs text-slate-400">
+           <span>&copy; 2026 Betsy AI.</span>
+           <div className="flex gap-4">
+              <Link href="/privacy" className="hover:text-slate-600">Privacy</Link>
+              <Link href="/terms" className="hover:text-slate-600">Terms</Link>
+           </div>
+        </div>
+      </div>
 
     </main>
   );
