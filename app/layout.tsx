@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Betsy AI",
   description: "Chat with your data securely",
+  icons: {
+    icon: "/b-logo.png",
+  },
 };
 
 export default function RootLayout({
