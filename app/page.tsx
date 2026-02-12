@@ -18,13 +18,7 @@ export default function LandingPage() {
       <nav className="w-full z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl shrink-0">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <Image
-              src="/wit-logo.png"
-              alt="Betsy AI Logo"
-              width={32}
-              height={32}
-              className="rounded-lg"
-            />
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white">B</div>
             <span className="text-slate-900">Betsy AI</span>
           </div>
           <div className="flex items-center gap-4">

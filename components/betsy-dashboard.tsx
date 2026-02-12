@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import {
   FileText, Table, Search,
   UploadCloud, Send, ChevronRight, Loader2,
@@ -784,13 +783,9 @@ const BetsyDashboard = () => {
         <div className="w-full max-w-md space-y-8 bg-white p-8 rounded-2xl border border-slate-200 shadow-xl animate-in fade-in zoom-in duration-300">
           <div className="text-center">
             <div className="flex items-center justify-center gap-3">
-              <Image 
-                src="/wit-logo.png" 
-                alt="Betsy AI Logo" 
-                width={40} 
-                height={40} 
-                className="rounded-xl shadow-lg shadow-indigo-500/20"
-              />
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/20">
+                B
+              </div>
               <h2 className="text-3xl font-bold tracking-tight text-slate-900">
                 {isSignUp ? 'Create an Account' : 'Welcome to Betsy'}
               </h2>
@@ -905,13 +900,7 @@ const BetsyDashboard = () => {
           : "-translate-x-full w-72 opacity-0 md:w-0 md:translate-x-0 md:opacity-0 md:border-0"
       )}>
         <div className="p-6 border-b border-slate-200 flex items-center gap-2">
-          <Image
-            src="/wit-logo.png"
-            alt="Betsy AI Logo"
-            width={32}
-            height={32}
-            className="rounded-lg"
-          />
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white">B</div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">Betsy AI</h1>
         </div>
 
