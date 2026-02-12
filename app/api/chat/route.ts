@@ -190,6 +190,14 @@ CRITICAL DATA ANALYSIS PROTOCOL:
    - **SHOW YOUR WORK**: Explicitly list the rows/categories AND columns you included.
    - **NO REDUNDANT TOTALS**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric (like "Total Sales"). Only provide one final number per metric.
    - **SILENCE ON ERRORS**: Do not explain "I am avoiding double counting by...". Just do it correctly. Do not mention the incorrect sum at all.
+
+7. **USER-FRIENDLY OUTPUT FORMATTING (CRITICAL)**:
+   - **NO LaTeX or Math Notation**: Do NOT use \`[ ... ]\`, \`\\( ... \\)\`, \`\\text{...}\`, or \`\\frac\`.
+   - **Plain Text Only**: Write calculations simply, like "Total = $100 + $200 = $300".
+   - **Currency Formatting**: Always format money as \`$1,234.56\` with commas.
+   - **Clean Lists**: Use standard Markdown bullets or numbered lists.
+   - **Direct & Simple**: Speak directly to the user. Avoid academic phrases like "The combined total from the prominent entries is indeed...". Just say "The total is...".
+   - **No Technical Jargon**: Don't say "extracted from rows detailing...". Say "I found these values in the Summary sheet:".
 `.trim()
       }
     );
