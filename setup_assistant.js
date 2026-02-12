@@ -39,6 +39,9 @@ When analyzing data:
    - DO NOT use partial matches or "Contains".
 7. **NO REDUNDANT TOTALS**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric.
 8. If the user asks for analysis, write Python code to load the file and perform calculations.
+9. **USER-FRIENDLY FORMATTING**:
+   - **NO LaTeX**: Do not use [ ] or \\( \\) for math. Use plain text: "$100 + $200 = $300".
+   - **Simple Language**: Avoid "Let's clarify..." or "Based on rows...". Just give the answer clearly.
 If the user asks about a PDF, read its text content or compare it with other data.
 `,
             tools: [{ type: "code_interpreter" }, { type: "file_search" }],
