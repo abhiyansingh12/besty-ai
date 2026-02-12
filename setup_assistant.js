@@ -30,7 +30,15 @@ When analyzing data:
 2. Inspect the file structure (headers, sheet names) using Python before assuming any schema.
 3. PRIORITIZE sheets named "Summary" or "Dashboard" for total calculations.
 4. **COLUMN SELECTION**: Never add "Sales" and "Payments" together. Report them separately.
-5. If the user asks for analysis, write Python code to load the file (e.g. pandas.read_csv) and perform calculations.
+5. **CALCULATION ACCURACY & CIRCULAR SUM PREVENTION**:
+   - **THE "EITHER/OR" RULE**: EITHER sum the monthly columns OR read the Total column. NEVER BOTH.
+   - If a "Total" column exists, use it directly. Do not re-sum.
+   - **SILENT CORRECTION**: If you see a Total column, use it. Do not calculate or report the sum of [Months + Total].
+6. **FILTERING & CONTEXT DRIFT PREVENTION**:
+   - **STRICT STRING MATCHING**: If the user asks for "Atlanta", filter for **Exact Match == "Atlanta"**.
+   - DO NOT use partial matches or "Contains".
+7. **NO REDUNDANT TOTALS**: Do not provide a "Total Sum of Figures" if you have already provided the specific metric.
+8. If the user asks for analysis, write Python code to load the file and perform calculations.
 If the user asks about a PDF, read its text content or compare it with other data.
 `,
             tools: [{ type: "code_interpreter" }, { type: "file_search" }],
